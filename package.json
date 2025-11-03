@@ -1,0 +1,54 @@
+{
+  "name": "@responsible-ai-labs/rail-score",
+  "version": "1.0.0",
+  "description": "JavaScript/TypeScript SDK for RAIL Score API - Evaluate responsible AI content",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "require": "./dist/index.js",
+      "import": "./dist/index.mjs",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format cjs,esm --dts --clean",
+    "test": "jest",
+    "prepublishOnly": "npm run build && npm test"
+  },
+  "keywords": [
+    "rail-score",
+    "responsible-ai",
+    "ai-safety",
+    "ai-ethics",
+    "content-moderation",
+    "compliance",
+    "gdpr",
+    "hipaa",
+    "rag-evaluation",
+    "hallucination-detection",
+    "typescript"
+  ],
+  "author": "Responsible AI Labs <support@responsibleailabs.ai>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Responsible-AI-Labs/rail-score-js.git"
+  },
+  "homepage": "https://responsibleailabs.ai",
+  "bugs": {
+    "url": "https://github.com/Responsible-AI-Labs/rail-score-js/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}

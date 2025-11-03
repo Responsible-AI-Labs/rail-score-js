@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RAIL Score SDK - Browser Example</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      line-height: 1.6;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      overflow: hidden;
+    }
+
+    .header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 30px;
+      text-align: center;
+    }
+
+    .header h1 {
+      font-size: 2em;
+      margin-bottom: 10px;
+    }
+
+    .header p {
+      opacity: 0.9;
+      font-size: 1.1em;
+    }
+
+    .content {
+      padding: 30px;
+    }
+
+    .section {
+      margin-bottom: 30px;
+    }
+
+    .section h2 {
+      color: #667eea;
+      margin-bottom: 15px;
+      font-size: 1.5em;
+    }
+
+    .input-group {
+      margin-bottom: 15px;
+    }
+
+    .input-group label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: 600;
+      color: #333;
+    }
+
+    .input-group input,
+    .input-group textarea {
+      width: 100%;
+      padding: 12px;
+      border: 2px solid #e0e0e0;
+      border-radius: 6px;
+      font-size: 14px;
+      font-family: inherit;
+      transition: border-color 0.3s;
+    }
+
+    .input-group input:focus,
+    .input-group textarea:focus {
+      outline: none;
+      border-color: #667eea;
+    }
+
+    .input-group textarea {
+      min-height: 120px;
+      resize: vertical;
+    }
+
+    .btn {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border: none;
+      padding: 12px 30px;
+      border-radius: 6px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    .btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+    }
+
+    .btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .result {
+      background: #f8f9fa;
+      border-left: 4px solid #667eea;
+      padding: 20px;
+      border-radius: 6px;
+      margin-top: 20px;
+    }
+
+    .result h3 {
+      color: #667eea;
+      margin-bottom: 15px;
+    }
+
+    .score-display {
+      display: flex;
+      align-items: center;
+      gap: 15px;
+      margin-bottom: 15px;
+    }
+
+    .score-circle {
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+      font-weight: bold;
+      color: white;
+    }
+
+    .score-circle.green { background: #10b981; }
+    .score-circle.yellow { background: #f59e0b; }
+    .score-circle.red { background: #ef4444; }
+
+    .score-details {
+      flex: 1;
+    }
+
+    .dimension-scores {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 15px;
+      margin-top: 15px;
+    }
+
+    .dimension-card {
+      background: white;
+      padding: 15px;
+      border-radius: 6px;
+      border: 2px solid #e0e0e0;
+    }
+
+    .dimension-card h4 {
+      color: #667eea;
+      margin-bottom: 8px;
+      font-size: 0.9em;
+      text-transform: uppercase;
+    }
+
+    .dimension-card .score {
+      font-size: 1.8em;
+      font-weight: bold;
+      color: #333;
+    }
+
+    .error {
+      background: #fee;
+      border-left: 4px solid #ef4444;
+      color: #c00;
+      padding: 15px;
+      border-radius: 6px;
+      margin-top: 20px;
+    }
+
+    .loading {
+      text-align: center;
+      padding: 40px;
+      color: #667eea;
+      font-size: 1.2em;
+    }
+
+    .spinner {
+      border: 3px solid #f3f3f3;
+      border-top: 3px solid #667eea;
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      animation: spin 1s linear infinite;
+      margin: 20px auto;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    .info {
+      background: #e3f2fd;
+      border-left: 4px solid #2196f3;
+      padding: 15px;
+      border-radius: 6px;
+      margin-bottom: 20px;
+    }
+
+    .info strong {
+      color: #1976d2;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>🛡️ RAIL Score SDK</h1>
+      <p>Evaluate Responsible AI Content in the Browser</p>
+    </div>
+
+    <div class="content">
+      <div class="section">
+        <div class="info">
+          <strong>⚠️ Note:</strong> For security reasons, never expose your API key in client-side code.
+          In production, use a backend proxy to make API calls.
+        </div>
+
+        <div class="input-group">
+          <label for="apiKey">API Key</label>
+          <input
+            type="password"
+            id="apiKey"
+            placeholder="Enter your RAIL Score API key"
+          />
+        </div>
+
+        <div class="input-group">
+          <label for="content">Content to Evaluate</label>
+          <textarea
+            id="content"
+            placeholder="Enter the content you want to evaluate for responsible AI..."
+          >Our AI system prioritizes user privacy and data security. We collect only essential information with explicit user consent, and all data is encrypted both in transit and at rest. Users have full control over their data and can request deletion at any time.</textarea>
+        </div>
+
+        <button class="btn" onclick="evaluateContent()">
+          Evaluate Content
+        </button>
+      </div>
+
+      <div id="output"></div>
+    </div>
+  </div>
+
+  <!-- Load the SDK from CDN (using unpkg as example) -->
+  <!-- In production, you would bundle this properly -->
+  <script type="module">
+    // Note: This is a simplified example. In production, you would:
+    // 1. Use a bundler like webpack/vite
+    // 2. Import from npm package
+    // 3. Never expose API keys in client code
+    // 4. Use a backend proxy for API calls
+
+    // For this example, we'll simulate the SDK behavior
+    // In real usage: import { RailScore } from '@responsibleailabs/rail-score';
+
+    window.evaluateContent = async function() {
+      const apiKey = document.getElementById('apiKey').value;
+      const content = document.getElementById('content').value;
+      const output = document.getElementById('output');
+
+      // Validation
+      if (!apiKey) {
+        output.innerHTML = `
+          <div class="error">
+            <strong>Error:</strong> Please enter your API key
+          </div>
+        `;
+        return;
+      }
+
+      if (!content.trim()) {
+        output.innerHTML = `
+          <div class="error">
+            <strong>Error:</strong> Please enter content to evaluate
+          </div>
+        `;
+        return;
+      }
+
+      // Show loading
+      output.innerHTML = `
+        <div class="loading">
+          <div class="spinner"></div>
+          <p>Evaluating content...</p>
+        </div>
+      `;
+
+      try {
+        // Make API call
+        // Note: In production, use your backend proxy, not direct API calls
+        const response = await fetch('https://api.responsibleailabs.ai/v1/evaluation/basic', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify({ content }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`API Error: ${response.status} ${response.statusText}`);
+        }
+
+        const result = await response.json();
+
+        // Display results
+        displayResults(result);
+
+      } catch (error) {
+        output.innerHTML = `
+          <div class="error">
+            <strong>Error:</strong> ${error.message}
+            <br><br>
+            Please check your API key and try again.
+          </div>
+        `;
+      }
+    };
+
+    window.displayResults = function(result) {
+      const output = document.getElementById('output');
+      const score = result.railScore.score;
+      const confidence = (result.railScore.confidence * 100).toFixed(1);
+
+      // Determine color
+      let colorClass = 'green';
+      if (score < 5) colorClass = 'red';
+      else if (score < 7) colorClass = 'yellow';
+
+      // Generate dimension cards
+      let dimensionCards = '';
+      for (const [dimension, dimScore] of Object.entries(result.scores)) {
+        const formattedName = dimension
+          .split('_')
+          .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+          .join(' ');
+
+        dimensionCards += `
+          <div class="dimension-card">
+            <h4>${formattedName}</h4>
+            <div class="score">${dimScore.score.toFixed(1)}/10</div>
+          </div>
+        `;
+      }
+
+      output.innerHTML = `
+        <div class="result">
+          <h3>📊 Evaluation Results</h3>
+
+          <div class="score-display">
+            <div class="score-circle ${colorClass}">
+              ${score.toFixed(1)}
+            </div>
+            <div class="score-details">
+              <h4>Overall RAIL Score</h4>
+              <p>Confidence: ${confidence}%</p>
+              <p>Processing Time: ${result.metadata.processingTimeMs}ms</p>
+              <p>Credits Used: ${result.metadata.creditsConsumed}</p>
+            </div>
+          </div>
+
+          <h4 style="margin-top: 20px; margin-bottom: 10px;">Dimension Scores</h4>
+          <div class="dimension-scores">
+            ${dimensionCards}
+          </div>
+        </div>
+      `;
+    };
+  </script>
+</body>
+</html>
