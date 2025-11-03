@@ -1,6 +1,6 @@
 # RAIL Score JavaScript/TypeScript SDK
 
-[![npm version](https://badge.fury.io/js/%40responsibleailabs%2Frail-score.svg)](https://www.npmjs.com/package/@responsibleailabs/rail-score)
+[![npm version](https://badge.fury.io/js/%40responsibleailabs%2Frail-score.svg)](https://www.npmjs.com/package/@responsible-ai-labs/rail-score/v/1.0.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.2-blue.svg)](https://www.typescriptlang.org/)
 
