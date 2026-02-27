@@ -1,8 +1,108 @@
-import type { Dimension, DimensionScore, EvaluationResult } from './types';
+import type { Dimension, DimensionInput, DimensionScore, EvaluationResult, ScoreLabel } from './types';
 
 /**
  * Utility functions for working with RAIL Score data
  */
+
+/** Tracks whether the legal_compliance deprecation warning has been emitted */
+let _legalComplianceWarned = false;
+
+/**
+ * Get a human-readable label for a score value
+ *
+ * @param score - Score value (0-10)
+ * @returns Score label
+ *
+ * @example
+ * ```typescript
+ * getScoreLabel(9.0);  // "Excellent"
+ * getScoreLabel(7.5);  // "Good"
+ * getScoreLabel(5.0);  // "Needs improvement"
+ * getScoreLabel(3.0);  // "Poor"
+ * getScoreLabel(1.0);  // "Critical"
+ * ```
+ */
+export function getScoreLabel(score: number): ScoreLabel {
+  if (score >= 8.0) return 'Excellent';
+  if (score >= 6.0) return 'Good';
+  if (score >= 4.0) return 'Needs improvement';
+  if (score >= 2.0) return 'Poor';
+  return 'Critical';
+}
+
+/**
+ * Normalize a dimension name, mapping deprecated names to their current equivalents.
+ * Emits a deprecation warning (once) when 'legal_compliance' is used.
+ *
+ * @param dim - Dimension name (may include deprecated 'legal_compliance')
+ * @returns Normalized dimension name
+ *
+ * @example
+ * ```typescript
+ * normalizeDimensionName('legal_compliance'); // "inclusivity" (+ deprecation warning)
+ * normalizeDimensionName('safety');           // "safety"
+ * ```
+ */
+export function normalizeDimensionName(dim: DimensionInput): Dimension {
+  if (dim === 'legal_compliance') {
+    if (!_legalComplianceWarned) {
+      console.warn(
+        '[RAIL Score] Dimension "legal_compliance" is deprecated and will be removed in a future version. ' +
+        'Use "inclusivity" instead. The value has been automatically mapped.'
+      );
+      _legalComplianceWarned = true;
+    }
+    return 'inclusivity';
+  }
+  return dim;
+}
+
+/**
+ * Reset the deprecation warning state (for testing purposes)
+ * @internal
+ */
+export function _resetDeprecationWarnings(): void {
+  _legalComplianceWarned = false;
+}
+
+/**
+ * Normalize weights that sum to 100 into weights that sum to 1.0.
+ * If weights already sum to ~1.0, returns them unchanged.
+ * Emits a deprecation warning when sum-to-100 weights are detected.
+ *
+ * @param weights - Dimension weights (may sum to 1.0 or 100)
+ * @returns Weights normalized to sum to 1.0
+ *
+ * @example
+ * ```typescript
+ * normalizeWeightsTo100({ safety: 50, privacy: 50 }); // { safety: 0.5, privacy: 0.5 }
+ * normalizeWeightsTo100({ safety: 0.5, privacy: 0.5 }); // unchanged
+ * ```
+ */
+export function normalizeWeightsTo100(weights: Record<string, number>): Record<string, number> {
+  const sum = Object.values(weights).reduce((acc, val) => acc + val, 0);
+
+  // Already sums to ~1.0
+  if (Math.abs(sum - 1.0) < 0.01) {
+    return weights;
+  }
+
+  // Sums to ~100 — convert
+  if (Math.abs(sum - 100) < 1.0) {
+    console.warn(
+      '[RAIL Score] Weights summing to 100 are deprecated. ' +
+      'Please use weights that sum to 1.0 instead. Auto-converting.'
+    );
+    const normalized: Record<string, number> = {};
+    for (const [key, value] of Object.entries(weights)) {
+      normalized[key] = value / 100;
+    }
+    return normalized;
+  }
+
+  // Neither — return as-is (validateWeights will catch invalid sums)
+  return weights;
+}
 
 /**
  * Format a RAIL Score for display
@@ -63,7 +163,8 @@ export function getScoreGrade(score: number): string {
 }
 
 /**
- * Validate dimension weights sum to 1.0
+ * Validate dimension weights.
+ * Accepts weights that sum to ~1.0 (standard) or ~100 (deprecated but supported).
  *
  * @param weights - Dimension weights object
  * @returns True if weights are valid
@@ -71,12 +172,14 @@ export function getScoreGrade(score: number): string {
  * @example
  * ```typescript
  * validateWeights({ safety: 0.5, privacy: 0.5 }); // true
- * validateWeights({ safety: 0.6, privacy: 0.5 }); // false
+ * validateWeights({ safety: 50, privacy: 50 });    // true (sum-to-100)
+ * validateWeights({ safety: 0.6, privacy: 0.5 });  // false
  * ```
  */
 export function validateWeights(weights: Record<string, number>): boolean {
   const sum = Object.values(weights).reduce((acc, val) => acc + val, 0);
-  return Math.abs(sum - 1.0) < 0.0001; // Allow for floating point precision
+  // Accept sum-to-1.0 or sum-to-100
+  return Math.abs(sum - 1.0) < 0.0001 || Math.abs(sum - 100) < 0.1;
 }
 
 /**
@@ -244,7 +347,8 @@ export function getDimensionsBelowThreshold(
  *
  * @example
  * ```typescript
- * formatDimensionName('legal_compliance'); // "Legal Compliance"
+ * formatDimensionName('inclusivity'); // "Inclusivity"
+ * formatDimensionName('user_impact'); // "User Impact"
  * formatDimensionName('safety'); // "Safety"
  * ```
  */

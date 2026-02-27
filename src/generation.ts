@@ -30,7 +30,7 @@ export class Generation {
    *   'Write a privacy policy for a mobile app',
    *   {
    *     targetScore: 9.0,
-   *     dimensions: ['privacy', 'transparency', 'legal_compliance'],
+   *     dimensions: ['privacy', 'transparency', 'inclusivity'],
    *     maxIterations: 3
    *   }
    * );

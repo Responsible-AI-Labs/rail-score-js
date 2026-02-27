@@ -2,6 +2,7 @@ import type { RailScore } from './client';
 import type {
   ComplianceResult,
   ComplianceFramework,
+  ComplianceCheckOptions,
 } from './types';
 import { ValidationError } from './errors';
 
@@ -15,9 +16,11 @@ export class Compliance {
    * Check content compliance against a specific framework
    *
    * Evaluates content against regulatory requirements and standards.
+   * Supports additional context and strict mode via options.
    *
    * @param content - The content to check for compliance
    * @param framework - The compliance framework to check against
+   * @param options - Optional check options (context, strict_mode)
    * @returns Promise resolving to compliance check result
    * @throws {ValidationError} If content or framework is invalid
    * @throws {AuthenticationError} If API key is invalid
@@ -27,18 +30,16 @@ export class Compliance {
    * ```typescript
    * const result = await client.compliance.check(
    *   'We collect and process user data for analytics...',
-   *   'gdpr'
+   *   'gdpr',
+   *   { context: 'Healthcare SaaS platform', strict_mode: true }
    * );
    * console.log(`Compliant: ${result.compliant}`);
-   * console.log(`Score: ${result.score}/10`);
-   * result.violations.forEach(v => {
-   *   console.log(`- ${v.severity}: ${v.description}`);
-   * });
    * ```
    */
   async check(
     content: string,
-    framework: ComplianceFramework
+    framework: ComplianceFramework,
+    options?: ComplianceCheckOptions
   ): Promise<ComplianceResult> {
     if (!content || content.trim().length === 0) {
       throw new ValidationError('Content cannot be empty');
@@ -53,6 +54,8 @@ export class Compliance {
       body: JSON.stringify({
         content,
         framework,
+        ...(options?.context && { context: options.context }),
+        ...(options?.strict_mode !== undefined && { strict_mode: options.strict_mode }),
       }),
     });
   }
@@ -61,9 +64,11 @@ export class Compliance {
    * Check content against multiple compliance frameworks
    *
    * Efficiently evaluate content against multiple regulatory frameworks in one request.
+   * Supports additional context and strict mode via options.
    *
    * @param content - The content to check for compliance
    * @param frameworks - Array of compliance frameworks to check against
+   * @param options - Optional check options (context, strict_mode)
    * @returns Promise resolving to array of compliance results
    * @throws {ValidationError} If content or frameworks are invalid
    *
@@ -71,7 +76,8 @@ export class Compliance {
    * ```typescript
    * const results = await client.compliance.checkMultiple(
    *   'Our healthcare app processes patient data...',
-   *   ['gdpr', 'hipaa']
+   *   ['gdpr', 'hipaa'],
+   *   { strict_mode: true }
    * );
    * results.forEach(result => {
    *   console.log(`${result.framework}: ${result.compliant ? 'PASS' : 'FAIL'}`);
@@ -80,7 +86,8 @@ export class Compliance {
    */
   async checkMultiple(
     content: string,
-    frameworks: ComplianceFramework[]
+    frameworks: ComplianceFramework[],
+    options?: ComplianceCheckOptions
   ): Promise<ComplianceResult[]> {
     if (!content || content.trim().length === 0) {
       throw new ValidationError('Content cannot be empty');
@@ -102,6 +109,8 @@ export class Compliance {
         body: JSON.stringify({
           content,
           frameworks,
+          ...(options?.context && { context: options.context }),
+          ...(options?.strict_mode !== undefined && { strict_mode: options.strict_mode }),
         }),
       }
     );
@@ -120,11 +129,8 @@ export class Compliance {
    *
    * @example
    * ```typescript
-   * const requirements = await client.compliance.getRequirements('gdpr');
+   * const requirements = await client.compliance.getRequirements('eu_ai_act');
    * console.log(`${requirements.name}: ${requirements.description}`);
-   * requirements.categories.forEach(cat => {
-   *   console.log(`- ${cat.name}: ${cat.requirements.length} requirements`);
-   * });
    * ```
    */
   async getRequirements(framework: ComplianceFramework): Promise<any> {
@@ -153,9 +159,6 @@ export class Compliance {
    *   'We store customer credit card information in our database...'
    * );
    * console.log(`Issues found: ${scan.issues.length}`);
-   * scan.issues.forEach(issue => {
-   *   console.log(`- [${issue.frameworks.join(', ')}] ${issue.description}`);
-   * });
    * ```
    */
   async scan(content: string): Promise<any> {

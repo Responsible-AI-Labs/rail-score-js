@@ -2,8 +2,12 @@ import {
   formatScore,
   getScoreColor,
   getScoreGrade,
+  getScoreLabel,
   validateWeights,
   normalizeWeights,
+  normalizeWeightsTo100,
+  normalizeDimensionName,
+  _resetDeprecationWarnings,
   calculateWeightedScore,
   getLowestScoringDimension,
   getHighestScoringDimension,
@@ -73,10 +77,47 @@ describe('Utility Functions', () => {
     });
   });
 
+  describe('getScoreLabel', () => {
+    it('should return Excellent for scores >= 8', () => {
+      expect(getScoreLabel(10.0)).toBe('Excellent');
+      expect(getScoreLabel(8.0)).toBe('Excellent');
+      expect(getScoreLabel(9.5)).toBe('Excellent');
+    });
+
+    it('should return Good for scores >= 6 and < 8', () => {
+      expect(getScoreLabel(7.9)).toBe('Good');
+      expect(getScoreLabel(6.0)).toBe('Good');
+      expect(getScoreLabel(7.0)).toBe('Good');
+    });
+
+    it('should return Needs improvement for scores >= 4 and < 6', () => {
+      expect(getScoreLabel(5.9)).toBe('Needs improvement');
+      expect(getScoreLabel(4.0)).toBe('Needs improvement');
+      expect(getScoreLabel(5.0)).toBe('Needs improvement');
+    });
+
+    it('should return Poor for scores >= 2 and < 4', () => {
+      expect(getScoreLabel(3.9)).toBe('Poor');
+      expect(getScoreLabel(2.0)).toBe('Poor');
+      expect(getScoreLabel(3.0)).toBe('Poor');
+    });
+
+    it('should return Critical for scores < 2', () => {
+      expect(getScoreLabel(1.9)).toBe('Critical');
+      expect(getScoreLabel(0.0)).toBe('Critical');
+      expect(getScoreLabel(1.0)).toBe('Critical');
+    });
+  });
+
   describe('validateWeights', () => {
-    it('should return true for valid weights', () => {
+    it('should return true for valid weights summing to 1.0', () => {
       expect(validateWeights({ safety: 0.5, privacy: 0.5 })).toBe(true);
       expect(validateWeights({ a: 0.3, b: 0.3, c: 0.4 })).toBe(true);
+    });
+
+    it('should return true for valid weights summing to 100', () => {
+      expect(validateWeights({ safety: 50, privacy: 50 })).toBe(true);
+      expect(validateWeights({ a: 30, b: 30, c: 40 })).toBe(true);
     });
 
     it('should return false for invalid weights', () => {
@@ -105,6 +146,79 @@ describe('Utility Functions', () => {
 
     it('should throw error for all-zero weights', () => {
       expect(() => normalizeWeights({ a: 0, b: 0 })).toThrow();
+    });
+  });
+
+  describe('normalizeWeightsTo100', () => {
+    it('should convert sum-to-100 weights to sum-to-1.0', () => {
+      const result = normalizeWeightsTo100({ safety: 50, privacy: 50 });
+      expect(result.safety).toBeCloseTo(0.5, 2);
+      expect(result.privacy).toBeCloseTo(0.5, 2);
+    });
+
+    it('should pass through weights that already sum to 1.0', () => {
+      const input = { safety: 0.6, privacy: 0.4 };
+      const result = normalizeWeightsTo100(input);
+      expect(result.safety).toBe(0.6);
+      expect(result.privacy).toBe(0.4);
+    });
+
+    it('should handle uneven sum-to-100 weights', () => {
+      const result = normalizeWeightsTo100({ a: 70, b: 30 });
+      expect(result.a).toBeCloseTo(0.7, 2);
+      expect(result.b).toBeCloseTo(0.3, 2);
+    });
+  });
+
+  describe('normalizeDimensionName', () => {
+    beforeEach(() => {
+      _resetDeprecationWarnings();
+    });
+
+    it('should map legal_compliance to inclusivity', () => {
+      const result = normalizeDimensionName('legal_compliance');
+      expect(result).toBe('inclusivity');
+    });
+
+    it('should pass through standard dimension names unchanged', () => {
+      expect(normalizeDimensionName('safety')).toBe('safety');
+      expect(normalizeDimensionName('privacy')).toBe('privacy');
+      expect(normalizeDimensionName('fairness')).toBe('fairness');
+      expect(normalizeDimensionName('inclusivity')).toBe('inclusivity');
+    });
+
+    it('should emit deprecation warning for legal_compliance', () => {
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      normalizeDimensionName('legal_compliance');
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('legal_compliance')
+      );
+      warnSpy.mockRestore();
+    });
+
+    it('should only emit deprecation warning once', () => {
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      normalizeDimensionName('legal_compliance');
+      normalizeDimensionName('legal_compliance');
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      warnSpy.mockRestore();
+    });
+  });
+
+  describe('_resetDeprecationWarnings', () => {
+    it('should allow deprecation warning to fire again after reset', () => {
+      _resetDeprecationWarnings();
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+      normalizeDimensionName('legal_compliance');
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+
+      _resetDeprecationWarnings();
+
+      normalizeDimensionName('legal_compliance');
+      expect(warnSpy).toHaveBeenCalledTimes(2);
+
+      warnSpy.mockRestore();
     });
   });
 

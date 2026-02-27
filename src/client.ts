@@ -4,6 +4,7 @@ import type {
   CreditBalance,
   UsageStats,
   HealthCheckResponse,
+  VersionInfo,
 } from './types';
 import { Evaluation } from './evaluation';
 import { Generation } from './generation';
@@ -11,12 +12,14 @@ import { Compliance } from './compliance';
 import {
   AuthenticationError,
   InsufficientCreditsError,
+  InsufficientTierError,
   RateLimitError,
   ValidationError,
   RailScoreError,
   TimeoutError,
   NetworkError,
   ServerError,
+  ServiceUnavailableError,
 } from './errors';
 
 /**
@@ -92,7 +95,7 @@ export class RailScore {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${this.apiKey}`,
-          'User-Agent': 'rail-score-js/1.0.0',
+          'User-Agent': 'rail-score-js/2.1.1',
           ...options.headers,
         },
         signal: controller.signal,
@@ -160,15 +163,23 @@ export class RailScore {
           errorData.required || 0
         );
 
+      case 403:
+        throw new InsufficientTierError(
+          errorData.required_tier || 'unknown',
+          errorData.current_tier || 'unknown'
+        );
+
       case 422:
         throw new ValidationError(message, errorData.field);
 
       case 429:
         throw new RateLimitError(errorData.retry_after || 60);
 
+      case 503:
+        throw new ServiceUnavailableError(message, errorData.retry_after);
+
       case 500:
       case 502:
-      case 503:
       case 504:
         throw new ServerError(message, status);
 
@@ -234,5 +245,20 @@ export class RailScore {
    */
   async healthCheck(): Promise<HealthCheckResponse> {
     return this.request<HealthCheckResponse>('/health', { method: 'GET' });
+  }
+
+  /**
+   * Get API version information
+   *
+   * @returns Promise resolving to version information
+   *
+   * @example
+   * ```typescript
+   * const info = await client.version();
+   * console.log(`API version: ${info.version}`);
+   * ```
+   */
+  async version(): Promise<VersionInfo> {
+    return this.request<VersionInfo>('/v1/version', { method: 'GET' });
   }
 }

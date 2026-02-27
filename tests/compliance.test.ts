@@ -85,6 +85,55 @@ describe('Compliance API', () => {
       expect(result.score).toBe(9.0);
     });
 
+    it('should accept ComplianceCheckOptions with context and strict_mode', async () => {
+      setMockResponse(mockComplianceResult);
+
+      const result = await client.compliance.check(
+        'We collect user data for analytics...',
+        'gdpr',
+        { context: 'Healthcare SaaS platform', strict_mode: true }
+      );
+
+      expect(result).toBeDefined();
+      expect(result.framework).toBe('gdpr');
+    });
+
+    it('should accept eu_ai_act framework', async () => {
+      const euAiActResult = { ...mockComplianceResult, framework: 'eu_ai_act' };
+      setMockResponse(euAiActResult);
+
+      const result = await client.compliance.check(
+        'Our AI system classifies users...',
+        'eu_ai_act'
+      );
+
+      expect(result.framework).toBe('eu_ai_act');
+    });
+
+    it('should accept india_dpdp framework', async () => {
+      const indiaDpdpResult = { ...mockComplianceResult, framework: 'india_dpdp' };
+      setMockResponse(indiaDpdpResult);
+
+      const result = await client.compliance.check(
+        'We process data of Indian users...',
+        'india_dpdp'
+      );
+
+      expect(result.framework).toBe('india_dpdp');
+    });
+
+    it('should accept india_ai_governance framework', async () => {
+      const indiaAiResult = { ...mockComplianceResult, framework: 'india_ai_governance' };
+      setMockResponse(indiaAiResult);
+
+      const result = await client.compliance.check(
+        'Our AI model is deployed in India...',
+        'india_ai_governance'
+      );
+
+      expect(result.framework).toBe('india_ai_governance');
+    });
+
     it('should throw ValidationError on empty content', async () => {
       await expect(
         client.compliance.check('', 'gdpr')
@@ -160,6 +209,67 @@ describe('Compliance API', () => {
       expect(results).toHaveLength(2);
       expect(results[0].framework).toBe('gdpr');
       expect(results[1].framework).toBe('hipaa');
+    });
+
+    it('should accept ComplianceCheckOptions with context and strict_mode', async () => {
+      setMockResponse(mockMultipleResults);
+
+      const results = await client.compliance.checkMultiple(
+        'Our healthcare app processes patient data...',
+        ['gdpr', 'hipaa'],
+        { context: 'Telemedicine platform', strict_mode: true }
+      );
+
+      expect(results).toHaveLength(2);
+    });
+
+    it('should accept new frameworks in checkMultiple', async () => {
+      const newFrameworksResults = {
+        results: [
+          {
+            framework: 'eu_ai_act',
+            compliant: true,
+            score: 8.5,
+            requirements: [],
+            violations: [],
+            recommendations: [],
+            metadata: {
+              reqId: 'req-multi-3',
+              tier: 'balanced',
+              queueWaitTimeMs: 30,
+              processingTimeMs: 2500,
+              creditsConsumed: 4,
+              timestamp: '2024-01-01T00:00:00Z',
+            },
+          },
+          {
+            framework: 'india_dpdp',
+            compliant: true,
+            score: 9.0,
+            requirements: [],
+            violations: [],
+            recommendations: [],
+            metadata: {
+              reqId: 'req-multi-4',
+              tier: 'balanced',
+              queueWaitTimeMs: 30,
+              processingTimeMs: 2500,
+              creditsConsumed: 4,
+              timestamp: '2024-01-01T00:00:00Z',
+            },
+          },
+        ],
+      };
+      setMockResponse(newFrameworksResults);
+
+      const results = await client.compliance.checkMultiple(
+        'Our AI system processes data globally...',
+        ['eu_ai_act', 'india_dpdp']
+      );
+
+      expect(results).toHaveLength(2);
+      expect(results[0].framework).toBe('eu_ai_act');
+      expect(results[1].framework).toBe('india_dpdp');
     });
 
     it('should throw ValidationError on empty content', async () => {
