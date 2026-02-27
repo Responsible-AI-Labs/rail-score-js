@@ -1,3 +1,5 @@
+import type { EvaluationResult, PolicyMode } from './types';
+
 /**
  * Base error class for all RAIL Score SDK errors
  */
@@ -119,5 +121,77 @@ export class ContentTooLongError extends ValidationError {
     this.name = 'ContentTooLongError';
     this.maxLength = maxLength;
     this.actualLength = actualLength;
+  }
+}
+
+/**
+ * Insufficient tier error - thrown when the current plan tier doesn't support the requested feature
+ */
+export class InsufficientTierError extends RailScoreError {
+  /** Tier required for the operation */
+  requiredTier: string;
+  /** Current account tier */
+  currentTier: string;
+
+  constructor(requiredTier: string, currentTier: string) {
+    super(`Feature requires '${requiredTier}' tier. Current tier: '${currentTier}'`);
+    this.name = 'InsufficientTierError';
+    this.requiredTier = requiredTier;
+    this.currentTier = currentTier;
+  }
+}
+
+/**
+ * Content too harmful error - thrown when content is deemed too harmful for processing
+ */
+export class ContentTooHarmfulError extends RailScoreError {
+  constructor(message: string = 'Content is too harmful to process') {
+    super(message);
+    this.name = 'ContentTooHarmfulError';
+  }
+}
+
+/**
+ * Evaluation failed error - thrown when the evaluation process fails server-side
+ */
+export class EvaluationFailedError extends RailScoreError {
+  /** Request ID for tracking the failed evaluation */
+  reqId?: string;
+
+  constructor(message: string = 'Evaluation failed', reqId?: string) {
+    super(message);
+    this.name = 'EvaluationFailedError';
+    this.reqId = reqId;
+  }
+}
+
+/**
+ * Service unavailable error - thrown when the API is temporarily unavailable
+ */
+export class ServiceUnavailableError extends ServerError {
+  /** Suggested retry delay in seconds */
+  retryAfter?: number;
+
+  constructor(message: string = 'Service temporarily unavailable', retryAfter?: number) {
+    super(message, 503);
+    this.name = 'ServiceUnavailableError';
+    this.retryAfter = retryAfter;
+  }
+}
+
+/**
+ * RAIL blocked error - thrown when content is blocked by a policy engine rule
+ */
+export class RAILBlockedError extends RailScoreError {
+  /** Policy mode that triggered the block */
+  policyMode: PolicyMode;
+  /** Evaluation scores that caused the block (if available) */
+  scores?: EvaluationResult['scores'];
+
+  constructor(message: string, policyMode: PolicyMode, scores?: EvaluationResult['scores']) {
+    super(message);
+    this.name = 'RAILBlockedError';
+    this.policyMode = policyMode;
+    this.scores = scores;
   }
 }

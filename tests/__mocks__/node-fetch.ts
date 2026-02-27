@@ -59,7 +59,19 @@ export function resetMock() {
   mockResponseOk = true;
   shouldThrowError = false;
   errorToThrow = null;
-  fetch.mockClear();
+  fetch.mockReset();
+  // Re-establish the default implementation after full reset
+  fetch.mockImplementation(async (url: string, options?: any): Promise<MockResponse> => {
+    if (shouldThrowError && errorToThrow) {
+      throw errorToThrow;
+    }
+    return {
+      ok: mockResponseOk,
+      status: mockResponseStatus,
+      statusText: mockResponseStatus === 200 ? 'OK' : 'Error',
+      json: async () => mockResponseData,
+    };
+  });
 }
 
 export default fetch;

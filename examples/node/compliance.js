@@ -200,8 +200,32 @@ async function main() {
       console.log();
     }
 
-    // 7. Compliance summary
-    console.log('7️⃣  Summary:\n');
+    // 7. New frameworks (v2.1.1): EU AI Act, India DPDP, India AI Governance
+    console.log('7️⃣  Checking new compliance frameworks (v2.1.1):\n');
+
+    const aiContent = `
+      Our AI system uses machine learning to make automated decisions about
+      loan applications. The model was trained on historical data and provides
+      explanations for each decision. Users can appeal automated decisions.
+    `;
+
+    const euAiResult = await client.compliance.check(aiContent.trim(), 'eu_ai_act', {
+      context: 'High-risk AI system for financial decisions',
+      strict_mode: true,
+    });
+
+    console.log(`   📋 EU AI Act Compliance:`);
+    console.log(`   ${euAiResult.compliant ? '✓' : '✗'} Compliant: ${euAiResult.compliant}`);
+    console.log(`   📊 Score: ${formatScore(euAiResult.score)}/10`);
+    console.log(`   ⚠ Violations: ${euAiResult.violations.length}\n`);
+
+    const indiaDpdpResult = await client.compliance.check(aiContent.trim(), 'india_dpdp');
+    console.log(`   📋 India DPDP Compliance:`);
+    console.log(`   ${indiaDpdpResult.compliant ? '✓' : '✗'} Compliant: ${indiaDpdpResult.compliant}`);
+    console.log(`   📊 Score: ${formatScore(indiaDpdpResult.score)}/10\n`);
+
+    // 8. Compliance summary
+    console.log('8️⃣  Summary:\n');
 
     const allCompliant = multiResults.every((r) => r.compliant);
     const avgScore =

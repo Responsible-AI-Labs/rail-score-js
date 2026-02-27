@@ -2,6 +2,8 @@ import { RailScore } from '../src/client';
 import {
   AuthenticationError,
   InsufficientCreditsError,
+  InsufficientTierError,
+  ServiceUnavailableError,
   ValidationError,
   RateLimitError,
   ServerError,
@@ -151,6 +153,21 @@ describe('RailScore Client', () => {
     });
   });
 
+  describe('version', () => {
+    it('should return version information successfully', async () => {
+      const mockVersion = {
+        version: '2.1.1',
+        features: ['deep_eval'],
+      };
+
+      setMockResponse(mockVersion);
+
+      const info = await client.version();
+      expect(info.version).toBe('2.1.1');
+      expect(info.features).toEqual(['deep_eval']);
+    });
+  });
+
   describe('Error Handling', () => {
     it('should throw AuthenticationError on 401', async () => {
       setMockResponse(
@@ -170,6 +187,23 @@ describe('RailScore Client', () => {
       );
 
       await expect(client.getCredits()).rejects.toThrow(InsufficientCreditsError);
+    });
+
+    it('should throw InsufficientTierError on 403 with tier info', async () => {
+      setMockResponse(
+        { message: 'Feature requires pro tier', required_tier: 'pro', current_tier: 'free' },
+        403,
+        false
+      );
+
+      try {
+        await client.getCredits();
+        fail('Expected InsufficientTierError to be thrown');
+      } catch (error: any) {
+        expect(error).toBeInstanceOf(InsufficientTierError);
+        expect(error.requiredTier).toBe('pro');
+        expect(error.currentTier).toBe('free');
+      }
     });
 
     it('should throw ValidationError on 422', async () => {
@@ -202,6 +236,23 @@ describe('RailScore Client', () => {
       );
 
       await expect(client.getCredits()).rejects.toThrow(ServerError);
+    });
+
+    it('should throw ServiceUnavailableError on 503', async () => {
+      setMockResponse(
+        { message: 'Service temporarily unavailable', retry_after: 30 },
+        503,
+        false
+      );
+
+      try {
+        await client.getCredits();
+        fail('Expected ServiceUnavailableError to be thrown');
+      } catch (error: any) {
+        expect(error).toBeInstanceOf(ServiceUnavailableError);
+        expect(error.retryAfter).toBe(30);
+        expect(error.statusCode).toBe(503);
+      }
     });
 
     it('should throw TimeoutError on timeout', async () => {
@@ -240,11 +291,20 @@ describe('RailScore Client', () => {
       // Verify the mock was called (implicitly tests headers are set)
     });
 
-    it('should include User-Agent header', async () => {
+    it('should include User-Agent header with version 2.1.1', async () => {
+      const fetchMock = require('node-fetch').default;
       setMockResponse({ ok: true, version: '1.0.0' });
 
       await client.healthCheck();
-      // Headers are set in client.ts
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            'User-Agent': 'rail-score-js/2.1.1',
+          }),
+        })
+      );
     });
 
     it('should set Content-Type to application/json', async () => {

@@ -4,11 +4,16 @@ import type {
   BatchEvaluationResult,
   RagEvaluationResult,
   Dimension,
+  DimensionInput,
   DimensionScore,
   BatchItem,
   ContextChunk,
+  EvaluationMode,
+  ProtectedEvaluationResult,
+  ProtectedRegenerateResult,
 } from './types';
 import { ValidationError } from './errors';
+import { normalizeDimensionName, normalizeWeightsTo100 } from './utils';
 
 /**
  * Evaluation API methods for scoring content with RAIL Score
@@ -17,12 +22,30 @@ export class Evaluation {
   constructor(private client: RailScore) {}
 
   /**
+   * Normalize a dimension input, mapping deprecated names
+   * @internal
+   */
+  private normalizeDimension(dim: DimensionInput): Dimension {
+    return normalizeDimensionName(dim);
+  }
+
+  /**
+   * Normalize weights for API calls (auto-convert sum-to-100 to sum-to-1.0)
+   * @internal
+   */
+  private normalizeWeightsForAPI(weights?: Record<string, number>): Record<string, number> | undefined {
+    if (!weights) return undefined;
+    return normalizeWeightsTo100(weights);
+  }
+
+  /**
    * Perform basic evaluation on content
    *
    * Evaluates content across all default dimensions and returns a comprehensive RAIL Score.
    *
    * @param content - The content to evaluate
-   * @param weights - Optional custom weights for dimensions (must sum to 1.0)
+   * @param weights - Optional custom weights for dimensions (must sum to 1.0 or 100)
+   * @param options - Optional evaluation options (mode, domain, usecase)
    * @returns Promise resolving to evaluation result
    * @throws {ValidationError} If content is empty or invalid
    * @throws {AuthenticationError} If API key is invalid
@@ -31,14 +54,17 @@ export class Evaluation {
    * @example
    * ```typescript
    * const result = await client.evaluation.basic(
-   *   'Our AI system prioritizes user privacy and data security.'
+   *   'Our AI system prioritizes user privacy and data security.',
+   *   undefined,
+   *   { mode: 'deep', domain: 'healthcare' }
    * );
    * console.log(`RAIL Score: ${result.railScore.score}/10`);
    * ```
    */
   async basic(
     content: string,
-    weights?: Record<string, number>
+    weights?: Record<string, number>,
+    options?: { mode?: EvaluationMode; domain?: string; usecase?: string }
   ): Promise<EvaluationResult> {
     if (!content || content.trim().length === 0) {
       throw new ValidationError('Content cannot be empty');
@@ -46,7 +72,13 @@ export class Evaluation {
 
     return this.client.request<EvaluationResult>('/v1/evaluation/basic', {
       method: 'POST',
-      body: JSON.stringify({ content, weights }),
+      body: JSON.stringify({
+        content,
+        weights: this.normalizeWeightsForAPI(weights),
+        ...(options?.mode && { mode: options.mode }),
+        ...(options?.domain && { domain: options.domain }),
+        ...(options?.usecase && { usecase: options.usecase }),
+      }),
     });
   }
 
@@ -54,9 +86,10 @@ export class Evaluation {
    * Evaluate content on a specific dimension
    *
    * Returns detailed scoring for a single dimension with explanation and issues.
+   * Accepts deprecated 'legal_compliance' dimension name (auto-maps to 'inclusivity').
    *
    * @param content - The content to evaluate
-   * @param dimension - The dimension to evaluate
+   * @param dimension - The dimension to evaluate (accepts 'legal_compliance' for backward compat)
    * @returns Promise resolving to dimension score details
    * @throws {ValidationError} If content or dimension is invalid
    *
@@ -67,12 +100,11 @@ export class Evaluation {
    *   'privacy'
    * );
    * console.log(`Privacy Score: ${result.score}/10`);
-   * console.log(`Issues: ${result.issues?.join(', ')}`);
    * ```
    */
   async dimension(
     content: string,
-    dimension: Dimension
+    dimension: DimensionInput
   ): Promise<DimensionScore> {
     if (!content || content.trim().length === 0) {
       throw new ValidationError('Content cannot be empty');
@@ -82,11 +114,13 @@ export class Evaluation {
       throw new ValidationError('Dimension is required');
     }
 
+    const normalizedDimension = this.normalizeDimension(dimension);
+
     const response = await this.client.request<{ score: DimensionScore }>(
       '/v1/evaluation/dimension',
       {
         method: 'POST',
-        body: JSON.stringify({ content, dimension }),
+        body: JSON.stringify({ content, dimension: normalizedDimension }),
       }
     );
 
@@ -97,6 +131,7 @@ export class Evaluation {
    * Perform custom evaluation with specific dimensions
    *
    * Allows you to evaluate only specific dimensions of interest.
+   * Accepts deprecated 'legal_compliance' dimension name (auto-maps to 'inclusivity').
    *
    * @param content - The content to evaluate
    * @param dimensions - Array of dimensions to evaluate
@@ -115,7 +150,7 @@ export class Evaluation {
    */
   async custom(
     content: string,
-    dimensions: Dimension[],
+    dimensions: DimensionInput[],
     weights?: Record<string, number>
   ): Promise<EvaluationResult> {
     if (!content || content.trim().length === 0) {
@@ -126,9 +161,15 @@ export class Evaluation {
       throw new ValidationError('At least one dimension is required');
     }
 
+    const normalizedDimensions = dimensions.map(d => this.normalizeDimension(d));
+
     return this.client.request<EvaluationResult>('/v1/evaluation/custom', {
       method: 'POST',
-      body: JSON.stringify({ content, dimensions, weights }),
+      body: JSON.stringify({
+        content,
+        dimensions: normalizedDimensions,
+        weights: this.normalizeWeightsForAPI(weights),
+      }),
     });
   }
 
@@ -154,7 +195,7 @@ export class Evaluation {
    */
   async batch(
     items: Array<string | BatchItem>,
-    dimensions?: Dimension[],
+    dimensions?: DimensionInput[],
     tier: 'fast' | 'balanced' | 'advanced' = 'balanced'
   ): Promise<BatchEvaluationResult> {
     if (!items || items.length === 0) {
@@ -178,11 +219,13 @@ export class Evaluation {
       }
     }
 
+    const normalizedDimensions = dimensions?.map(d => this.normalizeDimension(d));
+
     return this.client.request<BatchEvaluationResult>('/v1/evaluation/batch', {
       method: 'POST',
       body: JSON.stringify({
         items: normalizedItems,
-        dimensions,
+        dimensions: normalizedDimensions,
         tier,
       }),
     });
@@ -211,7 +254,6 @@ export class Evaluation {
    *   ]
    * );
    * console.log(`RAG Score: ${result.ragScore.score}/10`);
-   * console.log(`Context Relevance: ${result.metrics.contextRelevance.score}/10`);
    * ```
    */
   async ragEvaluate(
@@ -246,5 +288,89 @@ export class Evaluation {
         context_chunks: contextChunks,
       }),
     });
+  }
+
+  /**
+   * Evaluate content with protection thresholds
+   *
+   * Evaluates content and checks if it passes minimum score thresholds.
+   * Returns pass/fail status along with failed dimensions.
+   *
+   * @param content - The content to evaluate
+   * @param threshold - Minimum acceptable score per dimension (default: 7.0)
+   * @param mode - Evaluation mode (default: 'basic')
+   * @returns Promise resolving to protected evaluation result
+   * @throws {ValidationError} If content is empty
+   *
+   * @example
+   * ```typescript
+   * const result = await client.evaluation.protectedEvaluate(
+   *   'Content to check',
+   *   7.0,
+   *   'deep'
+   * );
+   * if (!result.passed) {
+   *   console.log('Failed dimensions:', result.failedDimensions);
+   * }
+   * ```
+   */
+  async protectedEvaluate(
+    content: string,
+    threshold: number = 7.0,
+    mode: EvaluationMode = 'basic'
+  ): Promise<ProtectedEvaluationResult> {
+    if (!content || content.trim().length === 0) {
+      throw new ValidationError('Content cannot be empty');
+    }
+
+    return this.client.request<ProtectedEvaluationResult>(
+      '/v1/evaluation/protected',
+      {
+        method: 'POST',
+        body: JSON.stringify({ content, threshold, mode }),
+      }
+    );
+  }
+
+  /**
+   * Regenerate content to fix identified issues
+   *
+   * Takes content that failed protection thresholds and regenerates it
+   * with the specified issues fixed.
+   *
+   * @param content - The content to regenerate
+   * @param issuesToFix - Array of issues to address in regeneration
+   * @returns Promise resolving to regenerated content result
+   * @throws {ValidationError} If content or issues are empty
+   *
+   * @example
+   * ```typescript
+   * const result = await client.evaluation.protectedRegenerate(
+   *   'Content with issues',
+   *   ['Bias in language', 'Missing safety disclaimers']
+   * );
+   * console.log('Fixed content:', result.content);
+   * console.log('Fixed issues:', result.fixedIssues);
+   * ```
+   */
+  async protectedRegenerate(
+    content: string,
+    issuesToFix: string[]
+  ): Promise<ProtectedRegenerateResult> {
+    if (!content || content.trim().length === 0) {
+      throw new ValidationError('Content cannot be empty');
+    }
+
+    if (!issuesToFix || issuesToFix.length === 0) {
+      throw new ValidationError('At least one issue to fix is required');
+    }
+
+    return this.client.request<ProtectedRegenerateResult>(
+      '/v1/evaluation/protected/regenerate',
+      {
+        method: 'POST',
+        body: JSON.stringify({ content, issues_to_fix: issuesToFix }),
+      }
+    );
   }
 }

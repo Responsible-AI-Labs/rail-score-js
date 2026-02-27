@@ -21,6 +21,11 @@ export interface RailScoreValue {
 }
 
 /**
+ * Score label indicating quality tier
+ */
+export type ScoreLabel = 'Excellent' | 'Good' | 'Needs improvement' | 'Poor' | 'Critical';
+
+/**
  * Score for an individual dimension with explanation
  */
 export interface DimensionScore extends RailScoreValue {
@@ -28,6 +33,8 @@ export interface DimensionScore extends RailScoreValue {
   explanation: string;
   /** List of identified issues (if any) */
   issues?: string[];
+  /** Human-readable score label */
+  label?: ScoreLabel;
 }
 
 /**
@@ -61,6 +68,11 @@ export interface EvaluationResult {
 }
 
 /**
+ * Evaluation mode controlling depth of analysis
+ */
+export type EvaluationMode = 'basic' | 'deep';
+
+/**
  * Options for evaluation requests
  */
 export interface EvaluationOptions {
@@ -70,6 +82,12 @@ export interface EvaluationOptions {
   tier?: 'fast' | 'balanced' | 'advanced';
   /** Specific dimensions to evaluate */
   dimensions?: Dimension[];
+  /** Evaluation mode (basic or deep analysis) */
+  mode?: EvaluationMode;
+  /** Content domain for specialized scoring */
+  domain?: string;
+  /** Specific use case context */
+  usecase?: string;
 }
 
 /**
@@ -144,8 +162,14 @@ export type Dimension =
   | 'transparency'
   | 'accountability'
   | 'reliability'
-  | 'legal_compliance'
+  | 'inclusivity'
   | 'user_impact';
+
+/**
+ * Input dimension type that accepts both current and deprecated names
+ * Allows 'legal_compliance' for backward compatibility (maps to 'inclusivity')
+ */
+export type DimensionInput = Dimension | 'legal_compliance';
 
 /**
  * Generation options
@@ -187,7 +211,20 @@ export type ComplianceFramework =
   | 'sox'
   | 'pci_dss'
   | 'iso27001'
-  | 'nist';
+  | 'nist'
+  | 'eu_ai_act'
+  | 'india_dpdp'
+  | 'india_ai_governance';
+
+/**
+ * Options for compliance check operations
+ */
+export interface ComplianceCheckOptions {
+  /** Additional context for compliance evaluation */
+  context?: string;
+  /** Enable strict mode for more rigorous checking */
+  strict_mode?: boolean;
+}
 
 /**
  * Compliance check result
@@ -239,6 +276,28 @@ export interface ComplianceViolation {
   location?: string;
   /** Remediation suggestion */
   remediation: string;
+}
+
+/**
+ * Protected evaluation result - extends EvaluationResult with pass/fail info
+ */
+export interface ProtectedEvaluationResult extends EvaluationResult {
+  /** Whether the content passed the protection threshold */
+  passed: boolean;
+  /** Dimensions that failed the threshold */
+  failedDimensions: string[];
+}
+
+/**
+ * Result from protected content regeneration
+ */
+export interface ProtectedRegenerateResult {
+  /** Regenerated content */
+  content: string;
+  /** RAIL Score of the regenerated content */
+  railScore: RailScoreValue;
+  /** Issues that were fixed during regeneration */
+  fixedIssues: string[];
 }
 
 /**
@@ -304,4 +363,79 @@ export interface HealthCheckResponse {
   version: string;
   /** Additional status info */
   status?: string;
+}
+
+/**
+ * Version information from the API
+ */
+export interface VersionInfo {
+  /** API version string */
+  version: string;
+  /** Minimum supported SDK version */
+  minSdkVersion?: string;
+  /** Available features */
+  features?: string[];
+}
+
+/**
+ * Configuration for multi-turn sessions
+ */
+export interface SessionConfig {
+  /** How often to use deep evaluation (every N turns) */
+  deepEvalFrequency?: number;
+  /** Number of recent turns to keep in context */
+  contextWindow?: number;
+  /** Minimum quality threshold - triggers deep eval when score dips below */
+  qualityThreshold?: number;
+}
+
+/**
+ * Metrics for a multi-turn session
+ */
+export interface SessionMetrics {
+  /** Average score across all turns */
+  averageScore: number;
+  /** Minimum score observed */
+  minScore: number;
+  /** Maximum score observed */
+  maxScore: number;
+  /** Total number of turns */
+  turnCount: number;
+  /** Average score per dimension across all turns */
+  dimensionAverages: Record<string, number>;
+  /** Percentage of turns that passed the quality threshold */
+  passingRate: number;
+}
+
+/**
+ * Policy enforcement mode
+ */
+export type PolicyMode = 'LOG_ONLY' | 'BLOCK' | 'REGENERATE' | 'CUSTOM';
+
+/**
+ * Configuration for the policy engine
+ */
+export interface PolicyConfig {
+  /** Enforcement mode */
+  mode: PolicyMode;
+  /** Score thresholds per dimension (scores below trigger policy action) */
+  thresholds: Record<string, number>;
+  /** Custom callback for CUSTOM mode */
+  customCallback?: (content: string, result: EvaluationResult) => Promise<string | null>;
+}
+
+/**
+ * Configuration for middleware wrapping
+ */
+export interface MiddlewareConfig {
+  /** Thresholds for input content evaluation */
+  inputThresholds?: Record<string, number>;
+  /** Thresholds for output content evaluation */
+  outputThresholds?: Record<string, number>;
+  /** Callback when input is evaluated */
+  onInputEval?: (result: EvaluationResult) => void;
+  /** Callback when output is evaluated */
+  onOutputEval?: (result: EvaluationResult) => void;
+  /** Policy enforcement config for output */
+  policy?: PolicyConfig;
 }

@@ -10,7 +10,7 @@
  * - Utility functions
  */
 
-const { RailScore, formatScore, getScoreGrade, formatDimensionName } = require('@responsibleailabs/rail-score');
+const { RailScore, formatScore, getScoreGrade, getScoreLabel, formatDimensionName } = require('@responsibleailabs/rail-score');
 
 async function main() {
   // Initialize the client with your API key
@@ -101,6 +101,27 @@ async function main() {
     console.log(`   ✓ Total requests: ${usage.summary.totalRequests}`);
     console.log(`   ✓ Total credits used: ${usage.summary.totalCredits}`);
     console.log(`   ✓ Success rate: ${(usage.summary.successRate * 100).toFixed(1)}%\n`);
+
+    // 8. Score labels (new in v2.1.1)
+    console.log('8️⃣  Score labels:');
+    for (const [dimension, score] of Object.entries(result.scores)) {
+      const label = getScoreLabel(score.score);
+      console.log(`   • ${formatDimensionName(dimension)}: ${label}`);
+    }
+    console.log();
+
+    // 9. Deep evaluation mode (new in v2.1.1)
+    console.log('9️⃣  Deep evaluation mode...');
+    const deepResult = await client.evaluation.basic(content.trim(), undefined, {
+      mode: 'deep',
+      domain: 'privacy-policy',
+    });
+    console.log(`   ✓ Deep RAIL Score: ${formatScore(deepResult.railScore.score)}/10\n`);
+
+    // 10. API version info (new in v2.1.1)
+    console.log('🔟 API version...');
+    const version = await client.version();
+    console.log(`   ✓ API Version: ${version.version}\n`);
 
     console.log('✅ Example completed successfully!\n');
 

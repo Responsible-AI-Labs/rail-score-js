@@ -66,6 +66,19 @@ describe('Evaluation API', () => {
       expect(result.railScore).toBeDefined();
     });
 
+    it('should accept options as third parameter', async () => {
+      setMockResponse(mockEvaluationResult);
+
+      const result = await client.evaluation.basic(
+        'Test content',
+        undefined,
+        { mode: 'deep', domain: 'healthcare', usecase: 'chat' }
+      );
+
+      expect(result).toBeDefined();
+      expect(result.railScore.score).toBe(8.5);
+    });
+
     it('should throw ValidationError on empty content', async () => {
       await expect(
         client.evaluation.basic('')
@@ -97,6 +110,15 @@ describe('Evaluation API', () => {
       expect(result.score).toBe(8.5);
       expect(result.confidence).toBe(0.90);
       expect(result.explanation).toBeDefined();
+    });
+
+    it('should accept legal_compliance and normalize to inclusivity', async () => {
+      setMockResponse(mockDimensionScore);
+
+      const result = await client.evaluation.dimension('Test content', 'legal_compliance');
+
+      expect(result.score).toBe(8.5);
+      expect(result.confidence).toBe(0.90);
     });
 
     it('should throw ValidationError on empty content', async () => {
@@ -152,6 +174,18 @@ describe('Evaluation API', () => {
       );
 
       expect(result).toBeDefined();
+    });
+
+    it('should accept legal_compliance in dimensions array', async () => {
+      setMockResponse(mockCustomResult);
+
+      const result = await client.evaluation.custom(
+        'Test content',
+        ['safety', 'legal_compliance']
+      );
+
+      expect(result).toBeDefined();
+      expect(result.railScore.score).toBe(8.0);
     });
 
     it('should throw ValidationError on empty content', async () => {
@@ -238,6 +272,18 @@ describe('Evaluation API', () => {
       );
 
       expect(result).toBeDefined();
+    });
+
+    it('should accept legal_compliance in batch dimensions', async () => {
+      setMockResponse(mockBatchResult);
+
+      const result = await client.evaluation.batch(
+        ['Content 1', 'Content 2'],
+        ['safety', 'legal_compliance']
+      );
+
+      expect(result).toBeDefined();
+      expect(result.totalItems).toBe(2);
     });
 
     it('should accept tier parameter', async () => {
@@ -366,6 +412,90 @@ describe('Evaluation API', () => {
             { content: '' },
           ]
         )
+      ).rejects.toThrow(ValidationError);
+    });
+  });
+
+  describe('protectedEvaluate', () => {
+    const mockProtectedResult = {
+      passed: true,
+      failedDimensions: [],
+      railScore: { score: 8.5, confidence: 0.92 },
+      scores: {
+        safety: { score: 9.0, confidence: 0.95, explanation: 'Safe', issues: [] },
+        privacy: { score: 8.0, confidence: 0.90, explanation: 'Good', issues: [] },
+      },
+      metadata: {
+        reqId: 'req-protected-1',
+        tier: 'balanced',
+        queueWaitTimeMs: 10,
+        processingTimeMs: 600,
+        creditsConsumed: 1,
+        timestamp: '2024-01-01T00:00:00Z',
+      },
+    };
+
+    it('should evaluate content with protection thresholds', async () => {
+      setMockResponse(mockProtectedResult);
+
+      const result = await client.evaluation.protectedEvaluate('Safe content');
+
+      expect(result.passed).toBe(true);
+      expect(result.failedDimensions).toEqual([]);
+      expect(result.railScore.score).toBe(8.5);
+      expect(result.scores).toBeDefined();
+      expect(result.metadata).toBeDefined();
+    });
+
+    it('should accept custom threshold and mode', async () => {
+      setMockResponse(mockProtectedResult);
+
+      const result = await client.evaluation.protectedEvaluate(
+        'Content to check',
+        8.0,
+        'deep'
+      );
+
+      expect(result).toBeDefined();
+      expect(result.passed).toBe(true);
+    });
+
+    it('should throw ValidationError on empty content', async () => {
+      await expect(
+        client.evaluation.protectedEvaluate('')
+      ).rejects.toThrow(ValidationError);
+    });
+  });
+
+  describe('protectedRegenerate', () => {
+    const mockRegenerateResult = {
+      content: 'fixed',
+      railScore: { score: 9.0, confidence: 0.94 },
+      fixedIssues: ['issue1'],
+    };
+
+    it('should regenerate content with fixed issues', async () => {
+      setMockResponse(mockRegenerateResult);
+
+      const result = await client.evaluation.protectedRegenerate(
+        'Content with problems',
+        ['issue1', 'issue2']
+      );
+
+      expect(result.content).toBe('fixed');
+      expect(result.railScore.score).toBe(9.0);
+      expect(result.fixedIssues).toEqual(['issue1']);
+    });
+
+    it('should throw ValidationError on empty content', async () => {
+      await expect(
+        client.evaluation.protectedRegenerate('', ['issue1'])
+      ).rejects.toThrow(ValidationError);
+    });
+
+    it('should throw ValidationError on empty issues array', async () => {
+      await expect(
+        client.evaluation.protectedRegenerate('Some content', [])
       ).rejects.toThrow(ValidationError);
     });
   });
