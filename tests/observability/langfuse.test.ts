@@ -20,7 +20,7 @@ describe('RAILLangfuse', () => {
 
   beforeEach(() => {
     resetMock();
-    client = new RailScore({ apiKey: 'test-api-key' });
+    client = new RailScore({ apiKey: 'test-rail-api-key' });
     mockLangfuse = {
       score: jest.fn(),
     };

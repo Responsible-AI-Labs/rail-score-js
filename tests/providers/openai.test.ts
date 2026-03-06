@@ -21,7 +21,7 @@ describe('RAILOpenAI', () => {
 
   beforeEach(() => {
     resetMock();
-    client = new RailScore({ apiKey: 'test-api-key' });
+    client = new RailScore({ apiKey: 'test-rail-api-key' });
     mockOpenAI = {
       chat: {
         completions: {

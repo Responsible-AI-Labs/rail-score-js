@@ -53,7 +53,7 @@ for (const [name, dim] of Object.entries(result.dimension_scores)) {
 
 ```typescript
 const client = new RailScore({
-  apiKey: 'your-api-key',                         // Required
+  apiKey: 'your-rail-api-key',                         // Required
   baseUrl: 'https://api.responsibleailabs.ai',    // Optional
   timeout: 30000,                                  // Optional (ms), default 30s
 });

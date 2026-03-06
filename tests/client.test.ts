@@ -22,7 +22,7 @@ describe('RailScore Client', () => {
 
   beforeEach(() => {
     resetMock();
-    client = new RailScore({ apiKey: 'test-api-key' });
+    client = new RailScore({ apiKey: 'test-rail-api-key' });
   });
 
   afterEach(() => {
@@ -41,13 +41,13 @@ describe('RailScore Client', () => {
     });
 
     it('should use default base URL when not provided', () => {
-      const defaultClient = new RailScore({ apiKey: 'test-key' });
+      const defaultClient = new RailScore({ apiKey: 'test-rail-api-key' });
       expect(defaultClient).toBeDefined();
     });
 
     it('should use custom base URL when provided', () => {
       const customClient = new RailScore({
-        apiKey: 'test-key',
+        apiKey: 'test-rail-api-key',
         baseUrl: 'https://custom-api.example.com',
       });
       expect(customClient).toBeDefined();
@@ -55,7 +55,7 @@ describe('RailScore Client', () => {
 
     it('should use custom timeout when provided', () => {
       const customClient = new RailScore({
-        apiKey: 'test-key',
+        apiKey: 'test-rail-api-key',
         timeout: 60000,
       });
       expect(customClient).toBeDefined();
@@ -232,7 +232,7 @@ describe('RailScore Client', () => {
 
       const callArgs = fetchMock.mock.calls[0];
       const headers = callArgs[1].headers;
-      expect(headers['Authorization']).toBe('Bearer test-api-key');
+      expect(headers['Authorization']).toBe('Bearer test-rail-api-key');
     });
   });
 });
