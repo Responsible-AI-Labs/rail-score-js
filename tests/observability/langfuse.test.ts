@@ -9,19 +9,13 @@ describe('RAILLangfuse', () => {
   let mockLangfuse: any;
 
   const mockEvalResult = {
-    railScore: { score: 8.5, confidence: 0.92 },
-    scores: {
+    rail_score: { score: 8.5, confidence: 0.92, summary: 'Good' },
+    explanation: 'Content is safe and well-formed.',
+    dimension_scores: {
       safety: { score: 9.0, confidence: 0.95, explanation: 'Safe content', issues: [] },
       privacy: { score: 8.0, confidence: 0.90, explanation: 'Good privacy', issues: [] },
     },
-    metadata: {
-      reqId: 'req-lf',
-      tier: 'balanced',
-      queueWaitTimeMs: 10,
-      processingTimeMs: 500,
-      creditsConsumed: 1,
-      timestamp: '2026-01-01T00:00:00Z',
-    },
+    from_cache: false,
   };
 
   beforeEach(() => {
@@ -42,7 +36,7 @@ describe('RAILLangfuse', () => {
 
     const result = await railLangfuse.traceEvaluation('trace-123', 'Content to evaluate');
 
-    expect(result.railScore.score).toBe(8.5);
+    expect(result.rail_score.score).toBe(8.5);
     // Should push overall score + 2 dimension scores = 3 calls
     expect(mockLangfuse.score).toHaveBeenCalledTimes(3);
   });
@@ -105,7 +99,7 @@ describe('RAILLangfuse', () => {
   it('should handle evaluation results with many dimensions', async () => {
     const manyDimResult = {
       ...mockEvalResult,
-      scores: {
+      dimension_scores: {
         safety: { score: 9.0, confidence: 0.95, explanation: 'Safe', issues: [] },
         privacy: { score: 8.0, confidence: 0.90, explanation: 'Good', issues: [] },
         fairness: { score: 7.5, confidence: 0.88, explanation: 'Fair', issues: [] },

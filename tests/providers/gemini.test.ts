@@ -10,18 +10,12 @@ describe('RAILGemini', () => {
   let mockModel: any;
 
   const mockEvalResult = {
-    railScore: { score: 8.5, confidence: 0.92 },
-    scores: {
+    rail_score: { score: 8.5, confidence: 0.92, summary: 'Good' },
+    explanation: 'Content is safe.',
+    dimension_scores: {
       safety: { score: 9.0, confidence: 0.95, explanation: 'Safe', issues: [] },
     },
-    metadata: {
-      reqId: 'req-gem',
-      tier: 'balanced',
-      queueWaitTimeMs: 10,
-      processingTimeMs: 500,
-      creditsConsumed: 1,
-      timestamp: '2026-01-01T00:00:00Z',
-    },
+    from_cache: false,
   };
 
   beforeEach(() => {
@@ -82,7 +76,7 @@ describe('RAILGemini', () => {
   it('should throw RAILBlockedError when thresholds fail', async () => {
     setMockResponse({
       ...mockEvalResult,
-      scores: {
+      dimension_scores: {
         safety: { score: 2.0, confidence: 0.40, explanation: 'Unsafe', issues: ['harmful'] },
       },
     });

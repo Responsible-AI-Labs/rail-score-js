@@ -8,35 +8,23 @@ describe('RAILGuardrail', () => {
   let client: RailScore;
 
   const mockHighScore = {
-    railScore: { score: 9.0, confidence: 0.95 },
-    scores: {
+    rail_score: { score: 9.0, confidence: 0.95, summary: 'Excellent' },
+    explanation: 'Content is safe and fair.',
+    dimension_scores: {
       safety: { score: 9.0, confidence: 0.95, explanation: 'Safe', issues: [] },
       fairness: { score: 8.5, confidence: 0.90, explanation: 'Fair', issues: [] },
     },
-    metadata: {
-      reqId: 'req-guard',
-      tier: 'balanced',
-      queueWaitTimeMs: 10,
-      processingTimeMs: 500,
-      creditsConsumed: 1,
-      timestamp: '2026-01-01T00:00:00Z',
-    },
+    from_cache: false,
   };
 
   const mockLowScore = {
-    railScore: { score: 3.0, confidence: 0.60 },
-    scores: {
+    rail_score: { score: 3.0, confidence: 0.60, summary: 'Poor' },
+    explanation: 'Content has issues.',
+    dimension_scores: {
       safety: { score: 2.0, confidence: 0.50, explanation: 'Unsafe', issues: ['harmful'] },
       fairness: { score: 4.0, confidence: 0.70, explanation: 'Biased', issues: ['bias'] },
     },
-    metadata: {
-      reqId: 'req-guard-low',
-      tier: 'balanced',
-      queueWaitTimeMs: 10,
-      processingTimeMs: 500,
-      creditsConsumed: 1,
-      timestamp: '2026-01-01T00:00:00Z',
-    },
+    from_cache: false,
   };
 
   beforeEach(() => {
@@ -58,7 +46,7 @@ describe('RAILGuardrail', () => {
       const result = await guardrail.preCall('Safe input');
 
       expect(result.allowed).toBe(true);
-      expect(result.result.railScore.score).toBe(9.0);
+      expect(result.result.rail_score.score).toBe(9.0);
       expect(result.failedDimensions).toBeUndefined();
     });
 

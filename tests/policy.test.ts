@@ -9,37 +9,25 @@ describe('PolicyEngine', () => {
   let client: RailScore;
 
   const mockHighScoreResult = {
-    railScore: { score: 9.0, confidence: 0.95 },
-    scores: {
+    rail_score: { score: 9.0, confidence: 0.95, summary: 'Excellent' },
+    explanation: 'Content is very safe and fair.',
+    dimension_scores: {
       safety: { score: 9.0, confidence: 0.95, explanation: 'Very safe', issues: [] },
       fairness: { score: 8.5, confidence: 0.90, explanation: 'Fair', issues: [] },
       privacy: { score: 8.0, confidence: 0.88, explanation: 'Good privacy', issues: [] },
     },
-    metadata: {
-      reqId: 'req-policy',
-      tier: 'balanced',
-      queueWaitTimeMs: 10,
-      processingTimeMs: 500,
-      creditsConsumed: 1,
-      timestamp: '2026-01-01T00:00:00Z',
-    },
+    from_cache: false,
   };
 
   const mockLowScoreResult = {
-    railScore: { score: 4.0, confidence: 0.70 },
-    scores: {
+    rail_score: { score: 4.0, confidence: 0.70, summary: 'Poor' },
+    explanation: 'Content has significant safety issues.',
+    dimension_scores: {
       safety: { score: 3.0, confidence: 0.60, explanation: 'Unsafe content detected', issues: ['harmful'] },
       fairness: { score: 5.0, confidence: 0.75, explanation: 'Some bias', issues: ['bias'] },
       privacy: { score: 8.0, confidence: 0.88, explanation: 'Good privacy', issues: [] },
     },
-    metadata: {
-      reqId: 'req-policy-low',
-      tier: 'balanced',
-      queueWaitTimeMs: 10,
-      processingTimeMs: 500,
-      creditsConsumed: 1,
-      timestamp: '2026-01-01T00:00:00Z',
-    },
+    from_cache: false,
   };
 
   beforeEach(() => {
@@ -61,7 +49,7 @@ describe('PolicyEngine', () => {
 
       const result = await policy.enforce('Low quality content');
 
-      expect(result.evaluation.railScore.score).toBe(4.0);
+      expect(result.evaluation.rail_score.score).toBe(4.0);
       expect(result.passed).toBe(false);
       expect(result.failedDimensions).toContain('safety');
     });
@@ -134,38 +122,34 @@ describe('PolicyEngine', () => {
   });
 
   describe('REGENERATE mode', () => {
-    it('should call protectedRegenerate when dimensions fail', async () => {
-      // First call: evaluation returns low scores
-      setMockResponse(mockLowScoreResult);
-      const policy = new PolicyEngine(client, {
-        mode: 'REGENERATE',
-        thresholds: { safety: 7.0 },
-      });
-
-      // The enforce method will make two API calls: basic eval then protectedRegenerate
-      // We need to handle the second call
+    it('should call safeRegenerate when dimensions fail', async () => {
       const fetchDefault = require('node-fetch').default;
       let callCount = 0;
       fetchDefault.mockImplementation(async () => {
         callCount++;
         if (callCount === 1) {
           return {
-            ok: true,
-            status: 200,
-            statusText: 'OK',
+            ok: true, status: 200, statusText: 'OK',
             json: async () => mockLowScoreResult,
           };
         }
         return {
-          ok: true,
-          status: 200,
-          statusText: 'OK',
+          ok: true, status: 200, statusText: 'OK',
           json: async () => ({
-            content: 'Regenerated safe content',
-            railScore: { score: 9.0, confidence: 0.95 },
-            fixedIssues: ['safety'],
+            status: 'passed',
+            original_content: 'Unsafe content',
+            credits_consumed: 2.0,
+            metadata: { req_id: 'req-regen', mode: 'basic' },
+            best_content: 'Regenerated safe content',
+            best_iteration: 1,
+            best_scores: { rail_score: { score: 9.0 }, dimension_scores: {} },
           }),
         };
+      });
+
+      const policy = new PolicyEngine(client, {
+        mode: 'REGENERATE',
+        thresholds: { safety: 7.0 },
       });
 
       const result = await policy.enforce('Unsafe content');
@@ -242,11 +226,9 @@ describe('PolicyEngine', () => {
         thresholds: { safety: 7.0 },
       });
 
-      // Should not throw in LOG_ONLY
       const result = await policy.enforce('Content');
       expect(result.passed).toBe(false);
 
-      // Switch to BLOCK
       policy.setMode('BLOCK');
       setMockResponse(mockLowScoreResult);
 
@@ -301,7 +283,6 @@ describe('PolicyEngine', () => {
       });
 
       const result = await policy.enforce('Content');
-      // privacy is 8.0, above 7.0 threshold
       expect(result.passed).toBe(true);
       expect(result.failedDimensions).toHaveLength(0);
     });
