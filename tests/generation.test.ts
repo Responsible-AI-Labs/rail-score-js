@@ -1,10 +1,10 @@
 import { RailScore } from '../src/client';
-import { ValidationError } from '../src/errors';
+import { ValidationError, ContentTooHarmfulError, SessionExpiredError } from '../src/errors';
 import { setMockResponse, resetMock } from './__mocks__/node-fetch';
 
 jest.mock('node-fetch');
 
-describe('Generation API', () => {
+describe('RailScore Client v2.2.1', () => {
   let client: RailScore;
 
   beforeEach(() => {
@@ -16,357 +16,323 @@ describe('Generation API', () => {
     resetMock();
   });
 
-  describe('generate', () => {
-    const mockGenerationResult = {
-      content: 'Generated responsible AI content here.',
-      railScore: { score: 9.0, confidence: 0.95 },
-      scores: {
-        safety: { score: 9.5, confidence: 0.96, explanation: 'Highly safe', issues: [] },
-        privacy: { score: 8.5, confidence: 0.92, explanation: 'Good privacy', issues: [] },
+  describe('eval', () => {
+    const mockEvalResult = {
+      rail_score: { score: 8.5, confidence: 0.92, summary: 'Good overall score' },
+      explanation: 'The content demonstrates strong responsible AI practices.',
+      dimension_scores: {
+        safety: { score: 9.0, confidence: 0.95, explanation: 'Very safe' },
+        privacy: { score: 8.0, confidence: 0.90, explanation: 'Good privacy' },
       },
-      iterations: 2,
-      metadata: {
-        reqId: 'req-gen-1',
-        tier: 'balanced',
-        queueWaitTimeMs: 20,
-        processingTimeMs: 1500,
-        creditsConsumed: 3,
-        timestamp: '2024-01-01T00:00:00Z',
-      },
+      from_cache: false,
     };
 
-    it('should generate content successfully', async () => {
-      setMockResponse(mockGenerationResult);
+    it('should evaluate content successfully', async () => {
+      setMockResponse(mockEvalResult);
 
-      const result = await client.generation.generate(
-        'Write a privacy policy for a mobile app'
-      );
+      const result = await client.eval({
+        content: 'AI should prioritize human welfare and safety.',
+      });
 
-      expect(result.content).toBeDefined();
-      expect(result.railScore.score).toBe(9.0);
-      expect(result.iterations).toBe(2);
+      expect(result.rail_score.score).toBe(8.5);
+      expect(result.rail_score.summary).toBe('Good overall score');
+      expect(result.dimension_scores.safety.score).toBe(9.0);
+      expect(result.from_cache).toBe(false);
     });
 
-    it('should accept generation options', async () => {
-      setMockResponse(mockGenerationResult);
+    it('should accept all eval options', async () => {
+      setMockResponse(mockEvalResult);
 
-      const result = await client.generation.generate(
-        'Write a privacy policy',
-        {
-          targetScore: 9.0,
-          dimensions: ['privacy', 'transparency'],
-          maxIterations: 3,
-          temperature: 0.7,
-        }
-      );
-
-      expect(result).toBeDefined();
-      expect(result.content).toBeTruthy();
-    });
-
-    it('should throw ValidationError on empty prompt', async () => {
-      await expect(
-        client.generation.generate('')
-      ).rejects.toThrow(ValidationError);
-    });
-
-    it('should throw ValidationError on whitespace-only prompt', async () => {
-      await expect(
-        client.generation.generate('   ')
-      ).rejects.toThrow(ValidationError);
-    });
-
-    it('should throw ValidationError on invalid targetScore (< 0)', async () => {
-      await expect(
-        client.generation.generate('Test prompt', { targetScore: -1 })
-      ).rejects.toThrow(ValidationError);
-    });
-
-    it('should throw ValidationError on invalid targetScore (> 10)', async () => {
-      await expect(
-        client.generation.generate('Test prompt', { targetScore: 11 })
-      ).rejects.toThrow(ValidationError);
-    });
-
-    it('should throw ValidationError on invalid maxIterations (< 1)', async () => {
-      await expect(
-        client.generation.generate('Test prompt', { maxIterations: 0 })
-      ).rejects.toThrow(ValidationError);
-    });
-
-    it('should throw ValidationError on invalid maxIterations (> 10)', async () => {
-      await expect(
-        client.generation.generate('Test prompt', { maxIterations: 11 })
-      ).rejects.toThrow(ValidationError);
-    });
-
-    it('should throw ValidationError on invalid temperature (< 0)', async () => {
-      await expect(
-        client.generation.generate('Test prompt', { temperature: -0.1 })
-      ).rejects.toThrow(ValidationError);
-    });
-
-    it('should throw ValidationError on invalid temperature (> 2)', async () => {
-      await expect(
-        client.generation.generate('Test prompt', { temperature: 2.1 })
-      ).rejects.toThrow(ValidationError);
-    });
-  });
-
-  describe('improve', () => {
-    const mockImproveResult = {
-      content: 'Improved content with better responsible AI practices.',
-      railScore: { score: 9.2, confidence: 0.94 },
-      scores: {
-        privacy: { score: 9.0, confidence: 0.93, explanation: 'Enhanced privacy', issues: [] },
-        transparency: { score: 9.5, confidence: 0.95, explanation: 'Very transparent', issues: [] },
-      },
-      iterations: 1,
-      metadata: {
-        reqId: 'req-improve-1',
-        tier: 'balanced',
-        queueWaitTimeMs: 15,
-        processingTimeMs: 1200,
-        creditsConsumed: 2,
-        timestamp: '2024-01-01T00:00:00Z',
-      },
-    };
-
-    it('should improve content successfully', async () => {
-      setMockResponse(mockImproveResult);
-
-      const result = await client.generation.improve(
-        'Our AI collects user data for analysis.'
-      );
-
-      expect(result.content).toBeDefined();
-      expect(result.railScore.score).toBeGreaterThan(8.0);
-    });
-
-    it('should accept target dimensions', async () => {
-      setMockResponse(mockImproveResult);
-
-      const result = await client.generation.improve(
-        'Test content',
-        ['privacy', 'transparency']
-      );
+      const result = await client.eval({
+        content: 'Test content',
+        mode: 'deep',
+        domain: 'healthcare',
+        dimensions: ['safety', 'reliability'],
+        includeSuggestions: true,
+        includeExplanations: true,
+        includeIssues: true,
+      });
 
       expect(result).toBeDefined();
     });
 
-    it('should accept custom target score', async () => {
-      setMockResponse(mockImproveResult);
+    it('should accept custom weights that sum to 100', async () => {
+      setMockResponse(mockEvalResult);
 
-      const result = await client.generation.improve(
-        'Test content',
-        ['privacy'],
-        9.5
-      );
+      const result = await client.eval({
+        content: 'Test content',
+        weights: { safety: 50, privacy: 50 },
+      });
 
       expect(result).toBeDefined();
     });
 
     it('should throw ValidationError on empty content', async () => {
       await expect(
-        client.generation.improve('')
+        client.eval({ content: '' })
       ).rejects.toThrow(ValidationError);
     });
 
-    it('should throw ValidationError on invalid target score (< 0)', async () => {
+    it('should throw ValidationError on whitespace-only content', async () => {
       await expect(
-        client.generation.improve('Test content', undefined, -1)
+        client.eval({ content: '   ' })
       ).rejects.toThrow(ValidationError);
     });
 
-    it('should throw ValidationError on invalid target score (> 10)', async () => {
+    it('should throw on weights that do not sum to 100', async () => {
       await expect(
-        client.generation.improve('Test content', undefined, 11)
-      ).rejects.toThrow(ValidationError);
+        client.eval({ content: 'Test', weights: { safety: 30, privacy: 30 } })
+      ).rejects.toThrow();
     });
   });
 
-  describe('rewrite', () => {
-    const mockRewriteResult = {
-      content: 'Rewritten content addressing all identified issues.',
-      railScore: { score: 8.8, confidence: 0.91 },
-      scores: {
-        safety: { score: 9.0, confidence: 0.93, explanation: 'Safe content', issues: [] },
+  describe('safeRegenerate', () => {
+    const mockSafeRegenResult = {
+      status: 'passed',
+      original_content: 'Our AI system collects user data.',
+      credits_consumed: 2.5,
+      metadata: { req_id: 'req-123', mode: 'basic', total_iterations: 2 },
+      best_content: 'Our AI system collects user data with explicit consent.',
+      best_iteration: 2,
+      best_scores: {
+        rail_score: { score: 8.5, confidence: 0.90 },
+        dimension_scores: { safety: { score: 9.0, confidence: 0.95 } },
       },
-      iterations: 1,
-      metadata: {
-        reqId: 'req-rewrite-1',
-        tier: 'balanced',
-        queueWaitTimeMs: 10,
-        processingTimeMs: 1000,
-        creditsConsumed: 2,
-        timestamp: '2024-01-01T00:00:00Z',
-      },
-    };
-
-    it('should rewrite content successfully', async () => {
-      setMockResponse(mockRewriteResult);
-
-      const result = await client.generation.rewrite(
-        'We may share your data with partners.',
-        [
-          'Lacks transparency about data sharing',
-          'No user consent mentioned',
-        ]
-      );
-
-      expect(result.content).toBeDefined();
-      expect(result.railScore.score).toBeGreaterThan(8.0);
-    });
-
-    it('should accept preserveTone parameter', async () => {
-      setMockResponse(mockRewriteResult);
-
-      const result = await client.generation.rewrite(
-        'Test content',
-        ['Issue 1'],
-        false
-      );
-
-      expect(result).toBeDefined();
-    });
-
-    it('should default preserveTone to true', async () => {
-      setMockResponse(mockRewriteResult);
-
-      const result = await client.generation.rewrite(
-        'Test content',
-        ['Issue 1']
-      );
-
-      expect(result).toBeDefined();
-    });
-
-    it('should throw ValidationError on empty content', async () => {
-      await expect(
-        client.generation.rewrite('', ['Issue'])
-      ).rejects.toThrow(ValidationError);
-    });
-
-    it('should throw ValidationError on empty issues array', async () => {
-      await expect(
-        client.generation.rewrite('Test content', [])
-      ).rejects.toThrow(ValidationError);
-    });
-
-    it('should throw ValidationError if issues contain empty strings', async () => {
-      await expect(
-        client.generation.rewrite('Test content', ['Valid issue', ''])
-      ).rejects.toThrow(ValidationError);
-    });
-  });
-
-  describe('variations', () => {
-    const mockVariationsResult = {
-      variations: [
+      iteration_history: [
         {
-          content: 'Variation 1 optimized for safety and transparency.',
-          railScore: { score: 9.0, confidence: 0.93 },
-          scores: {
-            safety: { score: 9.5, confidence: 0.95, explanation: 'Highly safe', issues: [] },
-            transparency: { score: 8.5, confidence: 0.90, explanation: 'Transparent', issues: [] },
-          },
-          iterations: 1,
-          metadata: {
-            reqId: 'req-var-1',
-            tier: 'balanced',
-            queueWaitTimeMs: 20,
-            processingTimeMs: 1500,
-            creditsConsumed: 3,
-            timestamp: '2024-01-01T00:00:00Z',
-          },
+          iteration: 1,
+          content: 'First attempt',
+          scores: { rail_score: { score: 7.0 } },
+          thresholds_met: false,
+          failing_dimensions: ['privacy'],
+          improvement_from_previous: null,
+          latency_ms: 500,
         },
         {
-          content: 'Variation 2 optimized for privacy and accountability.',
-          railScore: { score: 8.8, confidence: 0.91 },
-          scores: {
-            privacy: { score: 9.0, confidence: 0.92, explanation: 'Strong privacy', issues: [] },
-            accountability: { score: 8.6, confidence: 0.90, explanation: 'Accountable', issues: [] },
-          },
-          iterations: 1,
-          metadata: {
-            reqId: 'req-var-2',
-            tier: 'balanced',
-            queueWaitTimeMs: 20,
-            processingTimeMs: 1500,
-            creditsConsumed: 3,
-            timestamp: '2024-01-01T00:00:00Z',
-          },
+          iteration: 2,
+          content: 'Second attempt',
+          scores: { rail_score: { score: 8.5 } },
+          thresholds_met: true,
+          failing_dimensions: [],
+          improvement_from_previous: 1.5,
+          latency_ms: 450,
         },
       ],
     };
 
-    it('should generate variations successfully', async () => {
-      setMockResponse(mockVariationsResult);
+    it('should safe-regenerate content successfully', async () => {
+      setMockResponse(mockSafeRegenResult);
 
-      const results = await client.generation.variations(
-        'Describe our AI moderation system',
-        [
-          ['safety', 'transparency'],
-          ['privacy', 'accountability'],
-        ]
-      );
+      const result = await client.safeRegenerate({
+        content: 'Our AI system collects user data.',
+        mode: 'basic',
+        maxRegenerations: 2,
+        regenerationModel: 'RAIL_Safe_LLM',
+        thresholds: { overall: { score: 8.0, confidence: 0.5 } },
+      });
 
-      expect(results).toHaveLength(2);
-      expect(results[0].content).toBeDefined();
-      expect(results[1].content).toBeDefined();
+      expect(result.status).toBe('passed');
+      expect(result.best_content).toBeTruthy();
+      expect(result.best_scores?.rail_score.score).toBe(8.5);
+      expect(result.iteration_history).toHaveLength(2);
     });
 
-    it('should accept count parameter', async () => {
-      setMockResponse(mockVariationsResult);
+    it('should support external mode', async () => {
+      setMockResponse({
+        status: 'awaiting_regeneration',
+        original_content: 'Test',
+        credits_consumed: 1.0,
+        metadata: { req_id: 'req-456', mode: 'basic' },
+        session_id: 'sr_abc123',
+        iteration: 1,
+        iterations_remaining: 1,
+        current_scores: { rail_score: { score: 5.0 } },
+        rail_prompt: {
+          system_prompt: 'You are a helpful assistant...',
+          user_prompt: 'Improve this content...',
+          temperature: 0.7,
+        },
+      });
 
-      const results = await client.generation.variations(
-        'Test prompt',
-        [['safety']],
-        2
-      );
+      const result = await client.safeRegenerate({
+        content: 'Test content',
+        regenerationModel: 'external',
+        maxRegenerations: 1,
+      });
 
-      expect(results).toBeDefined();
+      expect(result.status).toBe('awaiting_regeneration');
+      expect(result.session_id).toBe('sr_abc123');
+      expect(result.rail_prompt).toBeDefined();
+      expect(result.rail_prompt?.system_prompt).toBeTruthy();
     });
 
-    it('should default count to 1', async () => {
-      setMockResponse({ variations: [mockVariationsResult.variations[0]] });
-
-      const results = await client.generation.variations(
-        'Test prompt',
-        [['safety']]
-      );
-
-      expect(results).toBeDefined();
-    });
-
-    it('should throw ValidationError on empty prompt', async () => {
+    it('should throw ValidationError on empty content', async () => {
       await expect(
-        client.generation.variations('', [['safety']])
+        client.safeRegenerate({ content: '' })
+      ).rejects.toThrow(ValidationError);
+    });
+  });
+
+  describe('safeRegenerateContinue', () => {
+    it('should continue an external session', async () => {
+      setMockResponse({
+        status: 'passed',
+        original_content: 'Original',
+        credits_consumed: 1.0,
+        metadata: { req_id: 'req-789', mode: 'basic' },
+        best_content: 'Improved content',
+        best_iteration: 1,
+        best_scores: {
+          rail_score: { score: 9.0 },
+          dimension_scores: {},
+        },
+      });
+
+      const result = await client.safeRegenerateContinue({
+        sessionId: 'sr_abc123',
+        regeneratedContent: 'My improved content',
+      });
+
+      expect(result.status).toBe('passed');
+      expect(result.best_content).toBe('Improved content');
+    });
+
+    it('should throw ValidationError on missing session ID', async () => {
+      await expect(
+        client.safeRegenerateContinue({ sessionId: '', regeneratedContent: 'test' })
       ).rejects.toThrow(ValidationError);
     });
 
-    it('should throw ValidationError on empty dimension sets', async () => {
+    it('should throw ValidationError on empty regenerated content', async () => {
       await expect(
-        client.generation.variations('Test prompt', [])
+        client.safeRegenerateContinue({ sessionId: 'sr_123', regeneratedContent: '' })
+      ).rejects.toThrow(ValidationError);
+    });
+  });
+
+  describe('complianceCheck', () => {
+    const mockComplianceResult = {
+      framework: 'gdpr',
+      framework_version: '2016/679',
+      framework_url: 'https://gdpr.eu',
+      evaluated_at: '2026-03-07T00:00:00Z',
+      compliance_score: { score: 4.5, confidence: 0.85, label: 'Fair', summary: 'Needs work' },
+      dimension_scores: {},
+      requirements_checked: 10,
+      requirements_passed: 5,
+      requirements_failed: 3,
+      requirements_warned: 2,
+      requirements: [],
+      issues: [
+        {
+          id: 'gdpr-1',
+          description: 'Missing consent mechanism',
+          dimension: 'privacy',
+          severity: 'high',
+          requirement: 'Consent',
+          article: 'Art. 7',
+          reference_url: 'https://gdpr.eu/article-7',
+          remediation_effort: 'medium',
+        },
+      ],
+      improvement_suggestions: ['Add explicit consent'],
+      from_cache: false,
+    };
+
+    it('should check single framework compliance', async () => {
+      setMockResponse(mockComplianceResult);
+
+      const result = await client.complianceCheck({
+        content: 'We collect user data without consent.',
+        framework: 'gdpr',
+        context: { domain: 'e-commerce', data_types: ['browsing_history'] },
+      });
+
+      expect(result.framework).toBe('gdpr');
+      expect(result.compliance_score.label).toBe('Fair');
+      expect(result.requirements_passed).toBe(5);
+      expect(result.issues).toHaveLength(1);
+    });
+
+    it('should resolve framework aliases', async () => {
+      setMockResponse(mockComplianceResult);
+
+      // 'ai_act' should resolve to 'eu_ai_act'
+      const result = await client.complianceCheck({
+        content: 'Test content',
+        framework: 'ai_act',
+      });
+
+      expect(result).toBeDefined();
+    });
+
+    it('should check multi-framework compliance', async () => {
+      const mockMulti = {
+        results: {
+          gdpr: mockComplianceResult,
+          ccpa: { ...mockComplianceResult, framework: 'ccpa' },
+        },
+        cross_framework_summary: {
+          frameworks_evaluated: 2,
+          average_score: 4.5,
+          weakest_framework: 'gdpr',
+          weakest_score: 4.5,
+        },
+      };
+
+      setMockResponse(mockMulti);
+
+      const result = await client.complianceCheck({
+        content: 'Test content',
+        frameworks: ['gdpr', 'ccpa'],
+      });
+
+      expect((result as any).cross_framework_summary).toBeDefined();
+      expect((result as any).cross_framework_summary.frameworks_evaluated).toBe(2);
+    });
+
+    it('should throw ValidationError on empty content', async () => {
+      await expect(
+        client.complianceCheck({ content: '', framework: 'gdpr' })
       ).rejects.toThrow(ValidationError);
     });
 
-    it('should throw ValidationError if any dimension set is empty', async () => {
+    it('should throw ValidationError on empty frameworks array', async () => {
       await expect(
-        client.generation.variations('Test prompt', [['safety'], []])
+        client.complianceCheck({ content: 'test', frameworks: [] } as any)
       ).rejects.toThrow(ValidationError);
     });
 
-    it('should throw ValidationError on invalid count (< 1)', async () => {
+    it('should throw ValidationError on more than 5 frameworks', async () => {
       await expect(
-        client.generation.variations('Test prompt', [['safety']], 0)
+        client.complianceCheck({
+          content: 'test',
+          frameworks: ['gdpr', 'ccpa', 'hipaa', 'eu_ai_act', 'india_dpdp', 'india_ai_gov'],
+        })
       ).rejects.toThrow(ValidationError);
     });
 
-    it('should throw ValidationError on invalid count (> 5)', async () => {
-      await expect(
-        client.generation.variations('Test prompt', [['safety']], 6)
-      ).rejects.toThrow(ValidationError);
+    it('should support strict mode', async () => {
+      setMockResponse(mockComplianceResult);
+
+      const result = await client.complianceCheck({
+        content: 'Test content',
+        framework: 'ccpa',
+        strictMode: true,
+      });
+
+      expect(result).toBeDefined();
+    });
+  });
+
+  describe('health', () => {
+    it('should return health status', async () => {
+      setMockResponse({ status: 'healthy', service: 'rail-score-engine' });
+
+      const health = await client.health();
+
+      expect(health.status).toBe('healthy');
+      expect(health.service).toBe('rail-score-engine');
     });
   });
 });

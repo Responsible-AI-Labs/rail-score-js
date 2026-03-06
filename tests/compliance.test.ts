@@ -16,446 +16,131 @@ describe('Compliance API', () => {
     resetMock();
   });
 
-  describe('check', () => {
-    const mockComplianceResult = {
-      framework: 'gdpr',
-      compliant: false,
-      score: 6.5,
-      requirements: [
-        {
-          id: 'gdpr-1',
-          name: 'Lawful basis for processing',
-          status: 'compliant',
-          score: 8.0,
-          description: 'Clear lawful basis identified',
-        },
-        {
-          id: 'gdpr-2',
-          name: 'User consent',
-          status: 'non_compliant',
-          score: 5.0,
-          description: 'Consent mechanism unclear',
-        },
-      ],
-      violations: [
-        {
-          severity: 'high',
-          requirement: 'User consent',
-          description: 'No explicit consent mechanism found',
-          location: 'Section 3',
-          remediation: 'Add clear consent opt-in mechanism',
-        },
-      ],
-      recommendations: [
-        'Implement explicit consent mechanism',
-        'Add data retention policy',
-      ],
-      metadata: {
-        reqId: 'req-compliance-1',
-        tier: 'balanced',
-        queueWaitTimeMs: 25,
-        processingTimeMs: 2000,
-        creditsConsumed: 2,
-        timestamp: '2024-01-01T00:00:00Z',
+  const mockComplianceResult = {
+    framework: 'gdpr',
+    framework_version: '2016/679',
+    framework_url: 'https://gdpr.eu',
+    evaluated_at: '2026-03-07T00:00:00Z',
+    compliance_score: { score: 6.5, confidence: 0.85, label: 'Good', summary: 'Generally compliant' },
+    dimension_scores: {},
+    requirements_checked: 10,
+    requirements_passed: 7,
+    requirements_failed: 2,
+    requirements_warned: 1,
+    requirements: [],
+    issues: [
+      {
+        id: 'gdpr-1',
+        description: 'No explicit consent mechanism found',
+        dimension: 'privacy',
+        severity: 'high',
+        requirement: 'User consent',
+        article: 'Art. 7',
+        reference_url: 'https://gdpr.eu/article-7',
+        remediation_effort: 'medium',
       },
-    };
+    ],
+    improvement_suggestions: ['Implement explicit consent mechanism'],
+    from_cache: false,
+  };
 
+  describe('single framework', () => {
     it('should check compliance successfully', async () => {
       setMockResponse(mockComplianceResult);
 
-      const result = await client.compliance.check(
-        'We collect and process user data for analytics...',
-        'gdpr'
-      );
+      const result = await client.complianceCheck({
+        content: 'We collect and process user data for analytics...',
+        framework: 'gdpr',
+      });
 
       expect(result.framework).toBe('gdpr');
-      expect(result.compliant).toBe(false);
-      expect(result.score).toBe(6.5);
-      expect(result.requirements).toHaveLength(2);
-      expect(result.violations).toHaveLength(1);
+      expect(result.compliance_score.score).toBe(6.5);
+      expect(result.requirements_checked).toBe(10);
+      expect(result.issues).toHaveLength(1);
     });
 
-    it('should handle compliant result', async () => {
-      const compliantResult = { ...mockComplianceResult, compliant: true, score: 9.0 };
-      setMockResponse(compliantResult);
-
-      const result = await client.compliance.check('Compliant content', 'gdpr');
-
-      expect(result.compliant).toBe(true);
-      expect(result.score).toBe(9.0);
-    });
-
-    it('should accept ComplianceCheckOptions with context and strict_mode', async () => {
+    it('should accept context parameter', async () => {
       setMockResponse(mockComplianceResult);
 
-      const result = await client.compliance.check(
-        'We collect user data for analytics...',
-        'gdpr',
-        { context: 'Healthcare SaaS platform', strict_mode: true }
-      );
+      const result = await client.complianceCheck({
+        content: 'We collect user data for analytics...',
+        framework: 'gdpr',
+        context: { domain: 'e-commerce', data_types: ['browsing_history'] },
+      });
 
       expect(result).toBeDefined();
       expect(result.framework).toBe('gdpr');
     });
 
-    it('should accept eu_ai_act framework', async () => {
-      const euAiActResult = { ...mockComplianceResult, framework: 'eu_ai_act' };
-      setMockResponse(euAiActResult);
+    it('should accept strictMode parameter', async () => {
+      setMockResponse(mockComplianceResult);
 
-      const result = await client.compliance.check(
-        'Our AI system classifies users...',
-        'eu_ai_act'
-      );
+      const result = await client.complianceCheck({
+        content: 'Test content',
+        framework: 'ccpa',
+        strictMode: true,
+      });
 
-      expect(result.framework).toBe('eu_ai_act');
+      expect(result).toBeDefined();
     });
 
-    it('should accept india_dpdp framework', async () => {
-      const indiaDpdpResult = { ...mockComplianceResult, framework: 'india_dpdp' };
-      setMockResponse(indiaDpdpResult);
+    it('should resolve framework aliases', async () => {
+      setMockResponse({ ...mockComplianceResult, framework: 'eu_ai_act' });
 
-      const result = await client.compliance.check(
-        'We process data of Indian users...',
-        'india_dpdp'
-      );
+      const result = await client.complianceCheck({
+        content: 'Our AI system classifies users...',
+        framework: 'ai_act',
+      });
 
-      expect(result.framework).toBe('india_dpdp');
-    });
-
-    it('should accept india_ai_governance framework', async () => {
-      const indiaAiResult = { ...mockComplianceResult, framework: 'india_ai_governance' };
-      setMockResponse(indiaAiResult);
-
-      const result = await client.compliance.check(
-        'Our AI model is deployed in India...',
-        'india_ai_governance'
-      );
-
-      expect(result.framework).toBe('india_ai_governance');
+      expect(result).toBeDefined();
     });
 
     it('should throw ValidationError on empty content', async () => {
       await expect(
-        client.compliance.check('', 'gdpr')
-      ).rejects.toThrow(ValidationError);
-    });
-
-    it('should throw ValidationError on whitespace-only content', async () => {
-      await expect(
-        client.compliance.check('   ', 'gdpr')
-      ).rejects.toThrow(ValidationError);
-    });
-
-    it('should throw ValidationError when framework is missing', async () => {
-      await expect(
-        client.compliance.check('Test content', '' as any)
+        client.complianceCheck({ content: '', framework: 'gdpr' })
       ).rejects.toThrow(ValidationError);
     });
   });
 
-  describe('checkMultiple', () => {
-    const mockMultipleResults = {
-      results: [
-        {
-          framework: 'gdpr',
-          compliant: true,
-          score: 9.0,
-          requirements: [],
-          violations: [],
-          recommendations: [],
-          metadata: {
-            reqId: 'req-multi-1',
-            tier: 'balanced',
-            queueWaitTimeMs: 30,
-            processingTimeMs: 2500,
-            creditsConsumed: 4,
-            timestamp: '2024-01-01T00:00:00Z',
-          },
-        },
-        {
-          framework: 'hipaa',
-          compliant: false,
-          score: 7.0,
-          requirements: [],
-          violations: [
-            {
-              severity: 'medium',
-              requirement: 'PHI protection',
-              description: 'Insufficient PHI safeguards',
-              remediation: 'Implement additional PHI protections',
-            },
-          ],
-          recommendations: ['Add PHI encryption'],
-          metadata: {
-            reqId: 'req-multi-2',
-            tier: 'balanced',
-            queueWaitTimeMs: 30,
-            processingTimeMs: 2500,
-            creditsConsumed: 4,
-            timestamp: '2024-01-01T00:00:00Z',
-          },
-        },
-      ],
+  describe('multi-framework', () => {
+    const mockMultiResult = {
+      results: {
+        gdpr: mockComplianceResult,
+        ccpa: { ...mockComplianceResult, framework: 'ccpa' },
+      },
+      cross_framework_summary: {
+        frameworks_evaluated: 2,
+        average_score: 6.5,
+        weakest_framework: 'gdpr',
+        weakest_score: 6.5,
+      },
     };
 
     it('should check multiple frameworks successfully', async () => {
-      setMockResponse(mockMultipleResults);
+      setMockResponse(mockMultiResult);
 
-      const results = await client.compliance.checkMultiple(
-        'Our healthcare app processes patient data...',
-        ['gdpr', 'hipaa']
-      );
+      const result = await client.complianceCheck({
+        content: 'Our healthcare app processes patient data...',
+        frameworks: ['gdpr', 'ccpa'],
+      });
 
-      expect(results).toHaveLength(2);
-      expect(results[0].framework).toBe('gdpr');
-      expect(results[1].framework).toBe('hipaa');
-    });
-
-    it('should accept ComplianceCheckOptions with context and strict_mode', async () => {
-      setMockResponse(mockMultipleResults);
-
-      const results = await client.compliance.checkMultiple(
-        'Our healthcare app processes patient data...',
-        ['gdpr', 'hipaa'],
-        { context: 'Telemedicine platform', strict_mode: true }
-      );
-
-      expect(results).toHaveLength(2);
-    });
-
-    it('should accept new frameworks in checkMultiple', async () => {
-      const newFrameworksResults = {
-        results: [
-          {
-            framework: 'eu_ai_act',
-            compliant: true,
-            score: 8.5,
-            requirements: [],
-            violations: [],
-            recommendations: [],
-            metadata: {
-              reqId: 'req-multi-3',
-              tier: 'balanced',
-              queueWaitTimeMs: 30,
-              processingTimeMs: 2500,
-              creditsConsumed: 4,
-              timestamp: '2024-01-01T00:00:00Z',
-            },
-          },
-          {
-            framework: 'india_dpdp',
-            compliant: true,
-            score: 9.0,
-            requirements: [],
-            violations: [],
-            recommendations: [],
-            metadata: {
-              reqId: 'req-multi-4',
-              tier: 'balanced',
-              queueWaitTimeMs: 30,
-              processingTimeMs: 2500,
-              creditsConsumed: 4,
-              timestamp: '2024-01-01T00:00:00Z',
-            },
-          },
-        ],
-      };
-      setMockResponse(newFrameworksResults);
-
-      const results = await client.compliance.checkMultiple(
-        'Our AI system processes data globally...',
-        ['eu_ai_act', 'india_dpdp']
-      );
-
-      expect(results).toHaveLength(2);
-      expect(results[0].framework).toBe('eu_ai_act');
-      expect(results[1].framework).toBe('india_dpdp');
-    });
-
-    it('should throw ValidationError on empty content', async () => {
-      await expect(
-        client.compliance.checkMultiple('', ['gdpr'])
-      ).rejects.toThrow(ValidationError);
+      expect((result as any).cross_framework_summary).toBeDefined();
+      expect((result as any).cross_framework_summary.frameworks_evaluated).toBe(2);
     });
 
     it('should throw ValidationError on empty frameworks array', async () => {
       await expect(
-        client.compliance.checkMultiple('Test content', [])
+        client.complianceCheck({ content: 'Test', frameworks: [] } as any)
       ).rejects.toThrow(ValidationError);
     });
 
-    it('should throw ValidationError on too many frameworks (> 10)', async () => {
-      const tooManyFrameworks = Array(11).fill('gdpr') as any[];
-
+    it('should throw ValidationError on more than 5 frameworks', async () => {
       await expect(
-        client.compliance.checkMultiple('Test content', tooManyFrameworks)
+        client.complianceCheck({
+          content: 'Test',
+          frameworks: ['gdpr', 'ccpa', 'hipaa', 'eu_ai_act', 'india_dpdp', 'india_ai_gov'],
+        })
       ).rejects.toThrow(ValidationError);
-    });
-  });
-
-  describe('getRequirements', () => {
-    const mockRequirements = {
-      framework: 'gdpr',
-      name: 'General Data Protection Regulation',
-      version: '2016/679',
-      description: 'EU regulation on data protection and privacy',
-      categories: [
-        {
-          name: 'Lawfulness of processing',
-          requirements: [
-            {
-              id: 'gdpr-1',
-              name: 'Lawful basis',
-              description: 'Processing must have a lawful basis',
-            },
-          ],
-        },
-      ],
-    };
-
-    it('should get framework requirements successfully', async () => {
-      setMockResponse(mockRequirements);
-
-      const requirements = await client.compliance.getRequirements('gdpr');
-
-      expect(requirements.framework).toBe('gdpr');
-      expect(requirements.name).toBeDefined();
-      expect(requirements.categories).toBeDefined();
-    });
-
-    it('should throw ValidationError when framework is missing', async () => {
-      await expect(
-        client.compliance.getRequirements('' as any)
-      ).rejects.toThrow(ValidationError);
-    });
-  });
-
-  describe('scan', () => {
-    const mockScanResult = {
-      issues: [
-        {
-          severity: 'high',
-          frameworks: ['gdpr', 'ccpa'],
-          description: 'Data collection without clear consent',
-          recommendation: 'Implement explicit consent mechanism',
-        },
-        {
-          severity: 'medium',
-          frameworks: ['pci_dss'],
-          description: 'Potential credit card data handling issue',
-          recommendation: 'Review PCI DSS requirements',
-        },
-      ],
-      summary: {
-        totalIssues: 2,
-        criticalIssues: 0,
-        highIssues: 1,
-        mediumIssues: 1,
-        lowIssues: 0,
-      },
-      affectedFrameworks: ['gdpr', 'ccpa', 'pci_dss'],
-    };
-
-    it('should scan for compliance issues successfully', async () => {
-      setMockResponse(mockScanResult);
-
-      const result = await client.compliance.scan(
-        'We store customer credit card information in our database...'
-      );
-
-      expect(result.issues).toBeDefined();
-      expect(result.issues).toHaveLength(2);
-      expect(result.summary.totalIssues).toBe(2);
-    });
-
-    it('should throw ValidationError on empty content', async () => {
-      await expect(
-        client.compliance.scan('')
-      ).rejects.toThrow(ValidationError);
-    });
-  });
-
-  describe('getRecommendations', () => {
-    const mockRecommendations = [
-      {
-        priority: 'high',
-        category: 'Consent',
-        suggestion: 'Implement explicit opt-in mechanism for data collection',
-        effort: 'medium',
-        impact: 'high',
-      },
-      {
-        priority: 'medium',
-        category: 'Data retention',
-        suggestion: 'Add clear data retention policy',
-        effort: 'low',
-        impact: 'medium',
-      },
-    ];
-
-    it('should get recommendations successfully', async () => {
-      setMockResponse(mockRecommendations);
-
-      const recommendations = await client.compliance.getRecommendations(
-        'We use cookies to track users.',
-        'gdpr'
-      );
-
-      expect(recommendations).toHaveLength(2);
-      expect(recommendations[0].priority).toBe('high');
-    });
-
-    it('should accept current violations parameter', async () => {
-      setMockResponse(mockRecommendations);
-
-      const recommendations = await client.compliance.getRecommendations(
-        'Test content',
-        'gdpr',
-        ['No consent mechanism', 'Missing privacy policy']
-      );
-
-      expect(recommendations).toBeDefined();
-    });
-
-    it('should throw ValidationError on empty content', async () => {
-      await expect(
-        client.compliance.getRecommendations('', 'gdpr')
-      ).rejects.toThrow(ValidationError);
-    });
-
-    it('should throw ValidationError when framework is missing', async () => {
-      await expect(
-        client.compliance.getRecommendations('Test content', '' as any)
-      ).rejects.toThrow(ValidationError);
-    });
-  });
-
-  describe('listFrameworks', () => {
-    const mockFrameworks = [
-      {
-        id: 'gdpr',
-        name: 'General Data Protection Regulation',
-        version: '2016/679',
-        region: 'EU',
-        description: 'EU data protection regulation',
-      },
-      {
-        id: 'hipaa',
-        name: 'Health Insurance Portability and Accountability Act',
-        version: '1996',
-        region: 'US',
-        description: 'US healthcare data protection',
-      },
-    ];
-
-    it('should list available frameworks successfully', async () => {
-      setMockResponse(mockFrameworks);
-
-      const frameworks = await client.compliance.listFrameworks();
-
-      expect(frameworks).toHaveLength(2);
-      expect(frameworks[0].id).toBe('gdpr');
-      expect(frameworks[1].id).toBe('hipaa');
     });
   });
 });

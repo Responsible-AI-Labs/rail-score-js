@@ -10,19 +10,13 @@ describe('RAILOpenAI', () => {
   let mockOpenAI: any;
 
   const mockEvalResult = {
-    railScore: { score: 8.5, confidence: 0.92 },
-    scores: {
+    rail_score: { score: 8.5, confidence: 0.92, summary: 'Good' },
+    explanation: 'Content is safe and well-formed.',
+    dimension_scores: {
       safety: { score: 9.0, confidence: 0.95, explanation: 'Safe', issues: [] },
       privacy: { score: 8.0, confidence: 0.90, explanation: 'Good', issues: [] },
     },
-    metadata: {
-      reqId: 'req-oai',
-      tier: 'balanced',
-      queueWaitTimeMs: 10,
-      processingTimeMs: 500,
-      creditsConsumed: 1,
-      timestamp: '2026-01-01T00:00:00Z',
-    },
+    from_cache: false,
   };
 
   beforeEach(() => {
@@ -91,8 +85,8 @@ describe('RAILOpenAI', () => {
   it('should throw RAILBlockedError when thresholds fail', async () => {
     setMockResponse({
       ...mockEvalResult,
-      scores: {
-        ...mockEvalResult.scores,
+      dimension_scores: {
+        ...mockEvalResult.dimension_scores,
         safety: { score: 3.0, confidence: 0.60, explanation: 'Unsafe', issues: ['harmful'] },
       },
     });

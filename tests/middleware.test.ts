@@ -9,35 +9,23 @@ describe('RAILMiddleware', () => {
   let client: RailScore;
 
   const mockHighScore = {
-    railScore: { score: 9.0, confidence: 0.95 },
-    scores: {
+    rail_score: { score: 9.0, confidence: 0.95, summary: 'Excellent' },
+    explanation: 'Very safe and fair content.',
+    dimension_scores: {
       safety: { score: 9.0, confidence: 0.95, explanation: 'Safe', issues: [] },
       fairness: { score: 8.5, confidence: 0.90, explanation: 'Fair', issues: [] },
     },
-    metadata: {
-      reqId: 'req-mw',
-      tier: 'balanced',
-      queueWaitTimeMs: 10,
-      processingTimeMs: 500,
-      creditsConsumed: 1,
-      timestamp: '2026-01-01T00:00:00Z',
-    },
+    from_cache: false,
   };
 
   const mockLowScore = {
-    railScore: { score: 3.0, confidence: 0.60 },
-    scores: {
+    rail_score: { score: 3.0, confidence: 0.60, summary: 'Poor' },
+    explanation: 'Content has safety and fairness issues.',
+    dimension_scores: {
       safety: { score: 2.0, confidence: 0.50, explanation: 'Unsafe', issues: ['harmful'] },
       fairness: { score: 4.0, confidence: 0.70, explanation: 'Biased', issues: ['bias'] },
     },
-    metadata: {
-      reqId: 'req-mw-low',
-      tier: 'balanced',
-      queueWaitTimeMs: 10,
-      processingTimeMs: 500,
-      creditsConsumed: 1,
-      timestamp: '2026-01-01T00:00:00Z',
-    },
+    from_cache: false,
   };
 
   beforeEach(() => {
@@ -89,16 +77,12 @@ describe('RAILMiddleware', () => {
 
   it('should evaluate output against outputThresholds', async () => {
     const fetchDefault = require('node-fetch').default;
-    let callCount = 0;
-    fetchDefault.mockImplementation(async () => {
-      callCount++;
-      return {
-        ok: true,
-        status: 200,
-        statusText: 'OK',
-        json: async () => mockHighScore,
-      };
-    });
+    fetchDefault.mockImplementation(async () => ({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      json: async () => mockHighScore,
+    }));
 
     const middleware = new RAILMiddleware(client, {
       outputThresholds: { safety: 7.0 },
@@ -136,7 +120,7 @@ describe('RAILMiddleware', () => {
     await wrapped('input');
 
     expect(onInputEval).toHaveBeenCalledWith(expect.objectContaining({
-      railScore: expect.objectContaining({ score: 9.0 }),
+      rail_score: expect.objectContaining({ score: 9.0 }),
     }));
   });
 
@@ -153,7 +137,7 @@ describe('RAILMiddleware', () => {
     await wrapped('input');
 
     expect(onOutputEval).toHaveBeenCalledWith(expect.objectContaining({
-      railScore: expect.objectContaining({ score: 9.0 }),
+      rail_score: expect.objectContaining({ score: 9.0 }),
     }));
   });
 
@@ -179,19 +163,21 @@ describe('RAILMiddleware', () => {
     fetchDefault.mockImplementation(async () => {
       callCount++;
       if (callCount === 1) {
-        // Output evaluation
         return {
           ok: true, status: 200, statusText: 'OK',
           json: async () => mockLowScore,
         };
       }
-      // Regeneration
       return {
         ok: true, status: 200, statusText: 'OK',
         json: async () => ({
-          content: 'Regenerated output',
-          railScore: { score: 9.0, confidence: 0.95 },
-          fixedIssues: ['safety'],
+          status: 'passed',
+          original_content: 'bad output',
+          credits_consumed: 1.0,
+          metadata: { req_id: 'req-regen', mode: 'basic' },
+          best_content: 'Regenerated output',
+          best_iteration: 1,
+          best_scores: { rail_score: { score: 9.0 }, dimension_scores: {} },
         }),
       };
     });
@@ -244,8 +230,6 @@ describe('RAILMiddleware', () => {
     const fn = jest.fn().mockResolvedValue('output');
     const wrapped = middleware.wrap(fn);
 
-    // LOG_ONLY with policy means no threshold check enforcement
-    // The output passes through because the policy handles it, not the raw threshold check
     const result = await wrapped('input');
     expect(result).toBe('output');
   });

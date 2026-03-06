@@ -6,13 +6,15 @@ import {
   ServiceUnavailableError,
   ValidationError,
   RateLimitError,
-  ServerError,
   TimeoutError,
   NetworkError,
+  SessionExpiredError,
+  ContentTooHarmfulError,
+  EvaluationFailedError,
+  NotImplementedByServerError,
 } from '../src/errors';
 import { setMockResponse, setMockError, resetMock } from './__mocks__/node-fetch';
 
-// Mock node-fetch
 jest.mock('node-fetch');
 
 describe('RailScore Client', () => {
@@ -30,9 +32,6 @@ describe('RailScore Client', () => {
   describe('Constructor', () => {
     it('should initialize with API key', () => {
       expect(client).toBeInstanceOf(RailScore);
-      expect(client.evaluation).toBeDefined();
-      expect(client.generation).toBeDefined();
-      expect(client.compliance).toBeDefined();
     });
 
     it('should throw ValidationError when API key is missing', () => {
@@ -57,126 +56,27 @@ describe('RailScore Client', () => {
     it('should use custom timeout when provided', () => {
       const customClient = new RailScore({
         apiKey: 'test-key',
-        timeout: 30000,
+        timeout: 60000,
       });
       expect(customClient).toBeDefined();
     });
   });
 
-  describe('getCredits', () => {
-    it('should fetch credit balance successfully', async () => {
-      const mockCredits = {
-        balance: 1000,
-        totalAllocated: 2000,
-        used: 1000,
-        tier: 'pro',
-        renewalDate: '2024-12-31',
-      };
-
-      setMockResponse(mockCredits);
-
-      const credits = await client.getCredits();
-      expect(credits).toEqual(mockCredits);
-      expect(credits.balance).toBe(1000);
-    });
-
-    it('should throw AuthenticationError on 401', async () => {
-      setMockResponse(
-        { message: 'Invalid API key' },
-        401,
-        false
-      );
-
-      await expect(client.getCredits()).rejects.toThrow(AuthenticationError);
-    });
-  });
-
-  describe('getUsage', () => {
-    it('should fetch usage statistics successfully', async () => {
-      const mockUsage = {
-        total: 10,
-        records: [
-          {
-            timestamp: '2024-01-01T00:00:00Z',
-            endpoint: '/v1/evaluation/basic',
-            creditsConsumed: 1,
-            reqId: 'req-123',
-            status: 'success',
-          },
-        ],
-        dateRange: {
-          from: '2024-01-01',
-          to: '2024-01-31',
-        },
-        summary: {
-          totalCredits: 10,
-          totalRequests: 10,
-          successRate: 1.0,
-        },
-      };
-
-      setMockResponse(mockUsage);
-
-      const usage = await client.getUsage(50);
-      expect(usage).toEqual(mockUsage);
-      expect(usage.total).toBe(10);
-    });
-
-    it('should include fromDate parameter when provided', async () => {
-      const mockUsage = {
-        total: 5,
-        records: [],
-        dateRange: { from: '2024-01-01', to: '2024-01-31' },
-        summary: { totalCredits: 5, totalRequests: 5, successRate: 1.0 },
-      };
-
-      setMockResponse(mockUsage);
-
-      const usage = await client.getUsage(50, '2024-01-01');
-      expect(usage.total).toBe(5);
-    });
-  });
-
-  describe('healthCheck', () => {
+  describe('health', () => {
     it('should return health status successfully', async () => {
-      const mockHealth = {
-        ok: true,
-        version: '1.0.0',
-        status: 'healthy',
-      };
+      setMockResponse({ status: 'healthy', service: 'rail-score-engine' });
 
-      setMockResponse(mockHealth);
-
-      const health = await client.healthCheck();
-      expect(health.ok).toBe(true);
-      expect(health.version).toBe('1.0.0');
-    });
-  });
-
-  describe('version', () => {
-    it('should return version information successfully', async () => {
-      const mockVersion = {
-        version: '2.1.1',
-        features: ['deep_eval'],
-      };
-
-      setMockResponse(mockVersion);
-
-      const info = await client.version();
-      expect(info.version).toBe('2.1.1');
-      expect(info.features).toEqual(['deep_eval']);
+      const health = await client.health();
+      expect(health.status).toBe('healthy');
+      expect(health.service).toBe('rail-score-engine');
     });
   });
 
   describe('Error Handling', () => {
     it('should throw AuthenticationError on 401', async () => {
-      setMockResponse(
-        { message: 'Invalid API key' },
-        401,
-        false
-      );
+      setMockResponse({ message: 'Invalid API key' }, 401, false);
 
-      await expect(client.getCredits()).rejects.toThrow(AuthenticationError);
+      await expect(client.eval({ content: 'test' })).rejects.toThrow(AuthenticationError);
     });
 
     it('should throw InsufficientCreditsError on 402', async () => {
@@ -186,7 +86,7 @@ describe('RailScore Client', () => {
         false
       );
 
-      await expect(client.getCredits()).rejects.toThrow(InsufficientCreditsError);
+      await expect(client.eval({ content: 'test' })).rejects.toThrow(InsufficientCreditsError);
     });
 
     it('should throw InsufficientTierError on 403 with tier info', async () => {
@@ -197,7 +97,7 @@ describe('RailScore Client', () => {
       );
 
       try {
-        await client.getCredits();
+        await client.eval({ content: 'test' });
         fail('Expected InsufficientTierError to be thrown');
       } catch (error: any) {
         expect(error).toBeInstanceOf(InsufficientTierError);
@@ -206,16 +106,18 @@ describe('RailScore Client', () => {
       }
     });
 
-    it('should throw ValidationError on 422', async () => {
-      setMockResponse(
-        { message: 'Invalid content', field: 'content' },
-        422,
-        false
-      );
+    it('should throw SessionExpiredError on 410', async () => {
+      setMockResponse({ message: 'Session expired' }, 410, false);
 
       await expect(
-        client.evaluation.basic('')
-      ).rejects.toThrow(ValidationError);
+        client.safeRegenerateContinue({ sessionId: 'sr_123', regeneratedContent: 'test' })
+      ).rejects.toThrow(SessionExpiredError);
+    });
+
+    it('should throw ContentTooHarmfulError on 422', async () => {
+      setMockResponse({ message: 'Content too harmful' }, 422, false);
+
+      await expect(client.eval({ content: 'test' })).rejects.toThrow(ContentTooHarmfulError);
     });
 
     it('should throw RateLimitError on 429', async () => {
@@ -225,17 +127,23 @@ describe('RailScore Client', () => {
         false
       );
 
-      await expect(client.getCredits()).rejects.toThrow(RateLimitError);
+      await expect(client.eval({ content: 'test' })).rejects.toThrow(RateLimitError);
     });
 
-    it('should throw ServerError on 500', async () => {
+    it('should throw EvaluationFailedError on 500', async () => {
       setMockResponse(
-        { message: 'Internal server error' },
+        { message: 'Internal server error', req_id: 'req-123' },
         500,
         false
       );
 
-      await expect(client.getCredits()).rejects.toThrow(ServerError);
+      await expect(client.eval({ content: 'test' })).rejects.toThrow(EvaluationFailedError);
+    });
+
+    it('should throw NotImplementedByServerError on 501', async () => {
+      setMockResponse({ message: 'Not implemented' }, 501, false);
+
+      await expect(client.eval({ content: 'test' })).rejects.toThrow(NotImplementedByServerError);
     });
 
     it('should throw ServiceUnavailableError on 503', async () => {
@@ -246,7 +154,7 @@ describe('RailScore Client', () => {
       );
 
       try {
-        await client.getCredits();
+        await client.eval({ content: 'test' });
         fail('Expected ServiceUnavailableError to be thrown');
       } catch (error: any) {
         expect(error).toBeInstanceOf(ServiceUnavailableError);
@@ -260,58 +168,71 @@ describe('RailScore Client', () => {
       abortError.name = 'AbortError';
       setMockError(abortError);
 
-      await expect(client.getCredits()).rejects.toThrow(TimeoutError);
+      await expect(client.eval({ content: 'test' })).rejects.toThrow(TimeoutError);
     });
 
     it('should throw NetworkError on network failure', async () => {
       const networkError = new Error('Network connection failed');
       setMockError(networkError);
 
-      await expect(client.getCredits()).rejects.toThrow(NetworkError);
+      await expect(client.eval({ content: 'test' })).rejects.toThrow(NetworkError);
     });
 
     it('should handle error responses without message', async () => {
       setMockResponse({}, 500, false);
 
-      await expect(client.getCredits()).rejects.toThrow(ServerError);
+      await expect(client.eval({ content: 'test' })).rejects.toThrow(EvaluationFailedError);
     });
 
     it('should handle malformed JSON error responses', async () => {
       setMockResponse(null, 500, false);
 
-      await expect(client.getCredits()).rejects.toThrow(ServerError);
+      await expect(client.eval({ content: 'test' })).rejects.toThrow(EvaluationFailedError);
     });
   });
 
   describe('Request Configuration', () => {
-    it('should include Authorization header with API key', async () => {
-      setMockResponse({ ok: true, version: '1.0.0' });
-
-      await client.healthCheck();
-      // Verify the mock was called (implicitly tests headers are set)
-    });
-
-    it('should include User-Agent header with version 2.1.1', async () => {
+    it('should include User-Agent header with version 2.2.1', async () => {
       const fetchMock = require('node-fetch').default;
-      setMockResponse({ ok: true, version: '1.0.0' });
+      setMockResponse({ status: 'healthy', service: 'rail-score-engine' });
 
-      await client.healthCheck();
+      await client.health();
 
       expect(fetchMock).toHaveBeenCalledWith(
         expect.any(String),
         expect.objectContaining({
           headers: expect.objectContaining({
-            'User-Agent': 'rail-score-js/2.1.1',
+            'User-Agent': 'rail-score-js/2.2.1',
           }),
         })
       );
     });
 
-    it('should set Content-Type to application/json', async () => {
-      setMockResponse({ ok: true, version: '1.0.0' });
+    it('should not include Authorization header for health endpoint', async () => {
+      const fetchMock = require('node-fetch').default;
+      setMockResponse({ status: 'healthy', service: 'rail-score-engine' });
 
-      await client.healthCheck();
-      // Headers are set in client.ts
+      await client.health();
+
+      const callArgs = fetchMock.mock.calls[0];
+      const headers = callArgs[1].headers;
+      expect(headers['Authorization']).toBeUndefined();
+    });
+
+    it('should include Authorization header for eval endpoint', async () => {
+      const fetchMock = require('node-fetch').default;
+      setMockResponse({
+        rail_score: { score: 8.0, confidence: 0.9, summary: 'Good' },
+        explanation: '',
+        dimension_scores: {},
+        from_cache: false,
+      });
+
+      await client.eval({ content: 'Test content' });
+
+      const callArgs = fetchMock.mock.calls[0];
+      const headers = callArgs[1].headers;
+      expect(headers['Authorization']).toBe('Bearer test-api-key');
     });
   });
 });

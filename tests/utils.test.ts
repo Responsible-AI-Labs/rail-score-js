@@ -16,8 +16,10 @@ import {
   aggregateScores,
   isPassing,
   confidenceWeightedScore,
+  resolveFrameworkAlias,
+  validateWeightsSum100,
 } from '../src/utils';
-import type { EvaluationResult, DimensionScore } from '../src/types';
+import type { EvalResult, DimensionScore } from '../src/types';
 
 describe('Utility Functions', () => {
   describe('formatScore', () => {
@@ -90,10 +92,10 @@ describe('Utility Functions', () => {
       expect(getScoreLabel(7.0)).toBe('Good');
     });
 
-    it('should return Needs improvement for scores >= 4 and < 6', () => {
-      expect(getScoreLabel(5.9)).toBe('Needs improvement');
-      expect(getScoreLabel(4.0)).toBe('Needs improvement');
-      expect(getScoreLabel(5.0)).toBe('Needs improvement');
+    it('should return Fair for scores >= 4 and < 6', () => {
+      expect(getScoreLabel(5.9)).toBe('Fair');
+      expect(getScoreLabel(4.0)).toBe('Fair');
+      expect(getScoreLabel(5.0)).toBe('Fair');
     });
 
     it('should return Poor for scores >= 2 and < 4', () => {
@@ -110,23 +112,28 @@ describe('Utility Functions', () => {
   });
 
   describe('validateWeights', () => {
-    it('should return true for valid weights summing to 1.0', () => {
-      expect(validateWeights({ safety: 0.5, privacy: 0.5 })).toBe(true);
-      expect(validateWeights({ a: 0.3, b: 0.3, c: 0.4 })).toBe(true);
-    });
-
     it('should return true for valid weights summing to 100', () => {
       expect(validateWeights({ safety: 50, privacy: 50 })).toBe(true);
       expect(validateWeights({ a: 30, b: 30, c: 40 })).toBe(true);
     });
 
     it('should return false for invalid weights', () => {
-      expect(validateWeights({ safety: 0.6, privacy: 0.5 })).toBe(false);
-      expect(validateWeights({ a: 0.2, b: 0.2 })).toBe(false);
+      expect(validateWeights({ safety: 60, privacy: 50 })).toBe(false);
+      expect(validateWeights({ a: 20, b: 20 })).toBe(false);
     });
 
     it('should handle floating point precision', () => {
-      expect(validateWeights({ a: 0.1, b: 0.2, c: 0.7 })).toBe(true);
+      expect(validateWeights({ a: 33.3, b: 33.3, c: 33.4 })).toBe(true);
+    });
+  });
+
+  describe('validateWeightsSum100', () => {
+    it('should not throw for valid weights summing to 100', () => {
+      expect(() => validateWeightsSum100({ safety: 50, privacy: 50 })).not.toThrow();
+    });
+
+    it('should throw for weights not summing to 100', () => {
+      expect(() => validateWeightsSum100({ safety: 30, privacy: 30 })).toThrow();
     });
   });
 
@@ -150,23 +157,47 @@ describe('Utility Functions', () => {
   });
 
   describe('normalizeWeightsTo100', () => {
-    it('should convert sum-to-100 weights to sum-to-1.0', () => {
-      const result = normalizeWeightsTo100({ safety: 50, privacy: 50 });
-      expect(result.safety).toBeCloseTo(0.5, 2);
-      expect(result.privacy).toBeCloseTo(0.5, 2);
+    it('should pass through weights that already sum to 100', () => {
+      const input = { safety: 60, privacy: 40 };
+      const result = normalizeWeightsTo100(input);
+      expect(result.safety).toBe(60);
+      expect(result.privacy).toBe(40);
     });
 
-    it('should pass through weights that already sum to 1.0', () => {
-      const input = { safety: 0.6, privacy: 0.4 };
-      const result = normalizeWeightsTo100(input);
-      expect(result.safety).toBe(0.6);
-      expect(result.privacy).toBe(0.4);
+    it('should convert sum-to-1.0 weights to sum-to-100', () => {
+      const result = normalizeWeightsTo100({ safety: 0.6, privacy: 0.4 });
+      expect(result.safety).toBeCloseTo(60, 0);
+      expect(result.privacy).toBeCloseTo(40, 0);
     });
 
     it('should handle uneven sum-to-100 weights', () => {
       const result = normalizeWeightsTo100({ a: 70, b: 30 });
-      expect(result.a).toBeCloseTo(0.7, 2);
-      expect(result.b).toBeCloseTo(0.3, 2);
+      expect(result.a).toBe(70);
+      expect(result.b).toBe(30);
+    });
+  });
+
+  describe('resolveFrameworkAlias', () => {
+    it('should resolve ai_act to eu_ai_act', () => {
+      expect(resolveFrameworkAlias('ai_act')).toBe('eu_ai_act');
+    });
+
+    it('should resolve euaia to eu_ai_act', () => {
+      expect(resolveFrameworkAlias('euaia')).toBe('eu_ai_act');
+    });
+
+    it('should resolve dpdp to india_dpdp', () => {
+      expect(resolveFrameworkAlias('dpdp')).toBe('india_dpdp');
+    });
+
+    it('should resolve ai_governance to india_ai_gov', () => {
+      expect(resolveFrameworkAlias('ai_governance')).toBe('india_ai_gov');
+    });
+
+    it('should pass through canonical framework names', () => {
+      expect(resolveFrameworkAlias('gdpr')).toBe('gdpr');
+      expect(resolveFrameworkAlias('ccpa')).toBe('ccpa');
+      expect(resolveFrameworkAlias('hipaa')).toBe('hipaa');
     });
   });
 
@@ -240,21 +271,15 @@ describe('Utility Functions', () => {
   });
 
   describe('getLowestScoringDimension', () => {
-    const mockResult: EvaluationResult = {
-      railScore: { score: 8.0, confidence: 0.9 },
-      scores: {
+    const mockResult: EvalResult = {
+      rail_score: { score: 8.0, confidence: 0.9, summary: 'Good' },
+      explanation: '',
+      dimension_scores: {
         safety: { score: 9.0, confidence: 0.95, explanation: 'Safe', issues: [] },
         privacy: { score: 6.5, confidence: 0.85, explanation: 'Needs work', issues: [] },
         fairness: { score: 8.0, confidence: 0.90, explanation: 'Fair', issues: [] },
       },
-      metadata: {
-        reqId: 'req-1',
-        tier: 'balanced',
-        queueWaitTimeMs: 10,
-        processingTimeMs: 500,
-        creditsConsumed: 1,
-        timestamp: '2024-01-01T00:00:00Z',
-      },
+      from_cache: false,
     };
 
     it('should find the lowest scoring dimension', () => {
@@ -265,21 +290,15 @@ describe('Utility Functions', () => {
   });
 
   describe('getHighestScoringDimension', () => {
-    const mockResult: EvaluationResult = {
-      railScore: { score: 8.0, confidence: 0.9 },
-      scores: {
+    const mockResult: EvalResult = {
+      rail_score: { score: 8.0, confidence: 0.9, summary: 'Good' },
+      explanation: '',
+      dimension_scores: {
         safety: { score: 9.0, confidence: 0.95, explanation: 'Safe', issues: [] },
         privacy: { score: 6.5, confidence: 0.85, explanation: 'Needs work', issues: [] },
         fairness: { score: 8.0, confidence: 0.90, explanation: 'Fair', issues: [] },
       },
-      metadata: {
-        reqId: 'req-1',
-        tier: 'balanced',
-        queueWaitTimeMs: 10,
-        processingTimeMs: 500,
-        creditsConsumed: 1,
-        timestamp: '2024-01-01T00:00:00Z',
-      },
+      from_cache: false,
     };
 
     it('should find the highest scoring dimension', () => {
@@ -290,28 +309,22 @@ describe('Utility Functions', () => {
   });
 
   describe('getDimensionsBelowThreshold', () => {
-    const mockResult: EvaluationResult = {
-      railScore: { score: 7.5, confidence: 0.9 },
-      scores: {
+    const mockResult: EvalResult = {
+      rail_score: { score: 7.5, confidence: 0.9, summary: 'Good' },
+      explanation: '',
+      dimension_scores: {
         safety: { score: 9.0, confidence: 0.95, explanation: 'Safe', issues: [] },
         privacy: { score: 6.5, confidence: 0.85, explanation: 'Needs work', issues: [] },
         fairness: { score: 6.0, confidence: 0.80, explanation: 'Needs improvement', issues: [] },
         transparency: { score: 7.8, confidence: 0.90, explanation: 'Transparent', issues: [] },
       },
-      metadata: {
-        reqId: 'req-1',
-        tier: 'balanced',
-        queueWaitTimeMs: 10,
-        processingTimeMs: 500,
-        creditsConsumed: 1,
-        timestamp: '2024-01-01T00:00:00Z',
-      },
+      from_cache: false,
     };
 
     it('should find dimensions below default threshold (7.0)', () => {
       const result = getDimensionsBelowThreshold(mockResult);
       expect(result).toHaveLength(2);
-      expect(result[0].dimension).toBe('fairness'); // Lowest first
+      expect(result[0].dimension).toBe('fairness');
       expect(result[1].dimension).toBe('privacy');
     });
 
@@ -339,36 +352,24 @@ describe('Utility Functions', () => {
   });
 
   describe('aggregateScores', () => {
-    const mockResults: EvaluationResult[] = [
+    const mockResults: EvalResult[] = [
       {
-        railScore: { score: 8.0, confidence: 0.9 },
-        scores: {
+        rail_score: { score: 8.0, confidence: 0.9, summary: 'Good' },
+        explanation: '',
+        dimension_scores: {
           safety: { score: 8.5, confidence: 0.95, explanation: 'Safe', issues: [] },
           privacy: { score: 7.5, confidence: 0.85, explanation: 'Good', issues: [] },
         },
-        metadata: {
-          reqId: 'req-1',
-          tier: 'balanced',
-          queueWaitTimeMs: 10,
-          processingTimeMs: 500,
-          creditsConsumed: 1,
-          timestamp: '2024-01-01T00:00:00Z',
-        },
+        from_cache: false,
       },
       {
-        railScore: { score: 7.0, confidence: 0.85 },
-        scores: {
+        rail_score: { score: 7.0, confidence: 0.85, summary: 'Good' },
+        explanation: '',
+        dimension_scores: {
           safety: { score: 7.5, confidence: 0.90, explanation: 'Safe', issues: [] },
           privacy: { score: 6.5, confidence: 0.80, explanation: 'Needs work', issues: [] },
         },
-        metadata: {
-          reqId: 'req-2',
-          tier: 'balanced',
-          queueWaitTimeMs: 10,
-          processingTimeMs: 500,
-          creditsConsumed: 1,
-          timestamp: '2024-01-01T00:00:00Z',
-        },
+        from_cache: false,
       },
     ];
 

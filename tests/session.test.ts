@@ -8,19 +8,13 @@ describe('RAILSession', () => {
   let client: RailScore;
 
   const mockEvalResult = (score: number) => ({
-    railScore: { score, confidence: 0.9 },
-    scores: {
+    rail_score: { score, confidence: 0.9, summary: 'Score: ' + score },
+    explanation: 'Evaluation result.',
+    dimension_scores: {
       safety: { score: score + 0.5, confidence: 0.95, explanation: 'Safe', issues: [] },
       privacy: { score: score - 0.5, confidence: 0.85, explanation: 'Good', issues: [] },
     },
-    metadata: {
-      reqId: 'req-session',
-      tier: 'balanced',
-      queueWaitTimeMs: 10,
-      processingTimeMs: 500,
-      creditsConsumed: 1,
-      timestamp: '2026-01-01T00:00:00Z',
-    },
+    from_cache: false,
   });
 
   beforeEach(() => {
@@ -53,7 +47,7 @@ describe('RAILSession', () => {
 
     const result = await session.addTurn('Test content');
 
-    expect(result.railScore.score).toBe(8.0);
+    expect(result.rail_score.score).toBe(8.0);
     expect(session.getTurnCount()).toBe(1);
     expect(session.getHistory()).toHaveLength(1);
   });
@@ -143,11 +137,9 @@ describe('RAILSession', () => {
   it('should use deep mode every N turns based on deepEvalFrequency', async () => {
     const session = new RAILSession(client, { deepEvalFrequency: 2 });
 
-    // Turn 1: basic (not multiple of 2)
     setMockResponse(mockEvalResult(8.0));
     await session.addTurn('Turn 1');
 
-    // Turn 2: deep (multiple of 2)
     setMockResponse(mockEvalResult(8.0));
     await session.addTurn('Turn 2');
 
@@ -157,11 +149,9 @@ describe('RAILSession', () => {
   it('should use deep mode when quality dips below threshold', async () => {
     const session = new RAILSession(client, { qualityThreshold: 7.0 });
 
-    // Turn 1: low score
     setMockResponse(mockEvalResult(5.0));
     await session.addTurn('Turn 1');
 
-    // Turn 2: should trigger deep eval because last turn was below threshold
     setMockResponse(mockEvalResult(8.0));
     await session.addTurn('Turn 2');
 

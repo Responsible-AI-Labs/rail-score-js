@@ -1,8 +1,12 @@
-import type { Dimension, DimensionInput, DimensionScore, EvaluationResult, ScoreLabel } from './types';
-
-/**
- * Utility functions for working with RAIL Score data
- */
+import type {
+  Dimension,
+  DimensionInput,
+  DimensionScore,
+  EvalResult,
+  ScoreLabel,
+  ComplianceFrameworkInput,
+  ComplianceFramework,
+} from './types';
 
 /** Tracks whether the legal_compliance deprecation warning has been emitted */
 let _legalComplianceWarned = false;
@@ -12,20 +16,11 @@ let _legalComplianceWarned = false;
  *
  * @param score - Score value (0-10)
  * @returns Score label
- *
- * @example
- * ```typescript
- * getScoreLabel(9.0);  // "Excellent"
- * getScoreLabel(7.5);  // "Good"
- * getScoreLabel(5.0);  // "Needs improvement"
- * getScoreLabel(3.0);  // "Poor"
- * getScoreLabel(1.0);  // "Critical"
- * ```
  */
 export function getScoreLabel(score: number): ScoreLabel {
   if (score >= 8.0) return 'Excellent';
   if (score >= 6.0) return 'Good';
-  if (score >= 4.0) return 'Needs improvement';
+  if (score >= 4.0) return 'Fair';
   if (score >= 2.0) return 'Poor';
   return 'Critical';
 }
@@ -33,22 +28,12 @@ export function getScoreLabel(score: number): ScoreLabel {
 /**
  * Normalize a dimension name, mapping deprecated names to their current equivalents.
  * Emits a deprecation warning (once) when 'legal_compliance' is used.
- *
- * @param dim - Dimension name (may include deprecated 'legal_compliance')
- * @returns Normalized dimension name
- *
- * @example
- * ```typescript
- * normalizeDimensionName('legal_compliance'); // "inclusivity" (+ deprecation warning)
- * normalizeDimensionName('safety');           // "safety"
- * ```
  */
 export function normalizeDimensionName(dim: DimensionInput): Dimension {
   if (dim === 'legal_compliance') {
     if (!_legalComplianceWarned) {
       console.warn(
-        '[RAIL Score] Dimension "legal_compliance" is deprecated and will be removed in a future version. ' +
-        'Use "inclusivity" instead. The value has been automatically mapped.'
+        '[RAIL Score] Dimension "legal_compliance" is deprecated. Use "inclusivity" instead.'
       );
       _legalComplianceWarned = true;
     }
@@ -66,132 +51,66 @@ export function _resetDeprecationWarnings(): void {
 }
 
 /**
- * Normalize weights that sum to 100 into weights that sum to 1.0.
- * If weights already sum to ~1.0, returns them unchanged.
- * Emits a deprecation warning when sum-to-100 weights are detected.
- *
- * @param weights - Dimension weights (may sum to 1.0 or 100)
- * @returns Weights normalized to sum to 1.0
- *
- * @example
- * ```typescript
- * normalizeWeightsTo100({ safety: 50, privacy: 50 }); // { safety: 0.5, privacy: 0.5 }
- * normalizeWeightsTo100({ safety: 0.5, privacy: 0.5 }); // unchanged
- * ```
+ * Framework alias mapping
+ */
+const FRAMEWORK_ALIASES: Record<string, ComplianceFramework> = {
+  ai_act: 'eu_ai_act',
+  euaia: 'eu_ai_act',
+  dpdp: 'india_dpdp',
+  ai_governance: 'india_ai_gov',
+  india_ai: 'india_ai_gov',
+};
+
+/**
+ * Resolve a framework alias to its canonical ID.
+ */
+export function resolveFrameworkAlias(framework: ComplianceFrameworkInput): ComplianceFramework {
+  return FRAMEWORK_ALIASES[framework] || framework as ComplianceFramework;
+}
+
+/**
+ * Validate that weights sum to 100. Throws if they don't.
+ */
+export function validateWeightsSum100(weights: Record<string, number>): void {
+  const sum = Object.values(weights).reduce((acc, val) => acc + val, 0);
+  if (Math.abs(sum - 100) > 1.0) {
+    throw new Error(`Weights must sum to 100. Current sum: ${sum}`);
+  }
+}
+
+/**
+ * Validate dimension weights sum to 100.
+ */
+export function validateWeights(weights: Record<string, number>): boolean {
+  const sum = Object.values(weights).reduce((acc, val) => acc + val, 0);
+  return Math.abs(sum - 100) < 1.0;
+}
+
+/**
+ * Normalize weights to sum to 100.
+ * If weights already sum to ~100, returns them unchanged.
+ * If weights sum to ~1.0, multiplies by 100.
  */
 export function normalizeWeightsTo100(weights: Record<string, number>): Record<string, number> {
   const sum = Object.values(weights).reduce((acc, val) => acc + val, 0);
 
-  // Already sums to ~1.0
-  if (Math.abs(sum - 1.0) < 0.01) {
+  if (Math.abs(sum - 100) < 1.0) {
     return weights;
   }
 
-  // Sums to ~100 — convert
-  if (Math.abs(sum - 100) < 1.0) {
-    console.warn(
-      '[RAIL Score] Weights summing to 100 are deprecated. ' +
-      'Please use weights that sum to 1.0 instead. Auto-converting.'
-    );
+  if (Math.abs(sum - 1.0) < 0.01) {
     const normalized: Record<string, number> = {};
     for (const [key, value] of Object.entries(weights)) {
-      normalized[key] = value / 100;
+      normalized[key] = value * 100;
     }
     return normalized;
   }
 
-  // Neither — return as-is (validateWeights will catch invalid sums)
   return weights;
 }
 
 /**
- * Format a RAIL Score for display
- *
- * @param score - Score value (0-10)
- * @param decimals - Number of decimal places (default: 1)
- * @returns Formatted score string
- *
- * @example
- * ```typescript
- * formatScore(8.567, 2); // "8.57"
- * formatScore(7.5); // "7.5"
- * ```
- */
-export function formatScore(score: number, decimals: number = 1): string {
-  return score.toFixed(decimals);
-}
-
-/**
- * Get a color indicator based on score
- *
- * @param score - Score value (0-10)
- * @returns Color name (red, yellow, green)
- *
- * @example
- * ```typescript
- * getScoreColor(9.0); // "green"
- * getScoreColor(5.5); // "yellow"
- * getScoreColor(3.0); // "red"
- * ```
- */
-export function getScoreColor(score: number): 'red' | 'yellow' | 'green' {
-  if (score >= 7.0) return 'green';
-  if (score >= 5.0) return 'yellow';
-  return 'red';
-}
-
-/**
- * Get a letter grade based on score
- *
- * @param score - Score value (0-10)
- * @returns Letter grade (A-F)
- *
- * @example
- * ```typescript
- * getScoreGrade(9.5); // "A"
- * getScoreGrade(7.0); // "B"
- * getScoreGrade(4.0); // "D"
- * ```
- */
-export function getScoreGrade(score: number): string {
-  if (score >= 9.0) return 'A';
-  if (score >= 8.0) return 'A-';
-  if (score >= 7.0) return 'B';
-  if (score >= 6.0) return 'C';
-  if (score >= 5.0) return 'D';
-  return 'F';
-}
-
-/**
- * Validate dimension weights.
- * Accepts weights that sum to ~1.0 (standard) or ~100 (deprecated but supported).
- *
- * @param weights - Dimension weights object
- * @returns True if weights are valid
- *
- * @example
- * ```typescript
- * validateWeights({ safety: 0.5, privacy: 0.5 }); // true
- * validateWeights({ safety: 50, privacy: 50 });    // true (sum-to-100)
- * validateWeights({ safety: 0.6, privacy: 0.5 });  // false
- * ```
- */
-export function validateWeights(weights: Record<string, number>): boolean {
-  const sum = Object.values(weights).reduce((acc, val) => acc + val, 0);
-  // Accept sum-to-1.0 or sum-to-100
-  return Math.abs(sum - 1.0) < 0.0001 || Math.abs(sum - 100) < 0.1;
-}
-
-/**
- * Normalize weights to sum to 1.0
- *
- * @param weights - Dimension weights object
- * @returns Normalized weights
- *
- * @example
- * ```typescript
- * normalizeWeights({ safety: 2, privacy: 1 }); // { safety: 0.667, privacy: 0.333 }
- * ```
+ * Normalize weights to sum to 1.0 (for client-side calculations)
  */
 export function normalizeWeights(
   weights: Record<string, number>
@@ -211,27 +130,41 @@ export function normalizeWeights(
 }
 
 /**
+ * Format a RAIL Score for display
+ */
+export function formatScore(score: number, decimals: number = 1): string {
+  return score.toFixed(decimals);
+}
+
+/**
+ * Get a color indicator based on score
+ */
+export function getScoreColor(score: number): 'red' | 'yellow' | 'green' {
+  if (score >= 7.0) return 'green';
+  if (score >= 5.0) return 'yellow';
+  return 'red';
+}
+
+/**
+ * Get a letter grade based on score
+ */
+export function getScoreGrade(score: number): string {
+  if (score >= 9.0) return 'A';
+  if (score >= 8.0) return 'A-';
+  if (score >= 7.0) return 'B';
+  if (score >= 6.0) return 'C';
+  if (score >= 5.0) return 'D';
+  return 'F';
+}
+
+/**
  * Calculate weighted average of dimension scores
- *
- * @param scores - Dimension scores
- * @param weights - Optional weights (defaults to equal weights)
- * @returns Weighted average score
- *
- * @example
- * ```typescript
- * calculateWeightedScore(
- *   { safety: { score: 8, confidence: 0.9 }, privacy: { score: 7, confidence: 0.85 } },
- *   { safety: 0.6, privacy: 0.4 }
- * ); // 7.6
- * ```
  */
 export function calculateWeightedScore(
   scores: Record<string, DimensionScore>,
   weights?: Record<string, number>
 ): number {
   const dimensions = Object.keys(scores);
-
-  // Use equal weights if not provided
   const actualWeights = weights ||
     Object.fromEntries(dimensions.map(d => [d, 1 / dimensions.length]));
 
@@ -245,24 +178,15 @@ export function calculateWeightedScore(
 }
 
 /**
- * Get the lowest scoring dimension
- *
- * @param result - Evaluation result
- * @returns Dimension name and score of the lowest scoring dimension
- *
- * @example
- * ```typescript
- * const lowest = getLowestScoringDimension(evaluationResult);
- * console.log(`Weakest area: ${lowest.dimension} (${lowest.score}/10)`);
- * ```
+ * Get the lowest scoring dimension from an eval result
  */
 export function getLowestScoringDimension(
-  result: EvaluationResult
+  result: EvalResult
 ): { dimension: string; score: DimensionScore } {
   let lowestDimension = '';
   let lowestScore: DimensionScore | null = null;
 
-  for (const [dimension, score] of Object.entries(result.scores)) {
+  for (const [dimension, score] of Object.entries(result.dimension_scores)) {
     if (!lowestScore || score.score < lowestScore.score) {
       lowestDimension = dimension;
       lowestScore = score;
@@ -276,24 +200,15 @@ export function getLowestScoringDimension(
 }
 
 /**
- * Get the highest scoring dimension
- *
- * @param result - Evaluation result
- * @returns Dimension name and score of the highest scoring dimension
- *
- * @example
- * ```typescript
- * const highest = getHighestScoringDimension(evaluationResult);
- * console.log(`Strongest area: ${highest.dimension} (${highest.score}/10)`);
- * ```
+ * Get the highest scoring dimension from an eval result
  */
 export function getHighestScoringDimension(
-  result: EvaluationResult
+  result: EvalResult
 ): { dimension: string; score: DimensionScore } {
   let highestDimension = '';
   let highestScore: DimensionScore | null = null;
 
-  for (const [dimension, score] of Object.entries(result.scores)) {
+  for (const [dimension, score] of Object.entries(result.dimension_scores)) {
     if (!highestScore || score.score > highestScore.score) {
       highestDimension = dimension;
       highestScore = score;
@@ -308,32 +223,19 @@ export function getHighestScoringDimension(
 
 /**
  * Filter dimensions below a threshold score
- *
- * @param result - Evaluation result
- * @param threshold - Minimum acceptable score (default: 7.0)
- * @returns Array of dimensions below threshold with their scores
- *
- * @example
- * ```typescript
- * const failing = getDimensionsBelowThreshold(result, 7.0);
- * failing.forEach(({ dimension, score }) => {
- *   console.log(`${dimension} needs improvement: ${score.score}/10`);
- * });
- * ```
  */
 export function getDimensionsBelowThreshold(
-  result: EvaluationResult,
+  result: EvalResult,
   threshold: number = 7.0
 ): Array<{ dimension: string; score: DimensionScore }> {
   const belowThreshold: Array<{ dimension: string; score: DimensionScore }> = [];
 
-  for (const [dimension, score] of Object.entries(result.scores)) {
+  for (const [dimension, score] of Object.entries(result.dimension_scores)) {
     if (score.score < threshold) {
       belowThreshold.push({ dimension, score });
     }
   }
 
-  // Sort by score (lowest first)
   belowThreshold.sort((a, b) => a.score.score - b.score.score);
 
   return belowThreshold;
@@ -341,16 +243,6 @@ export function getDimensionsBelowThreshold(
 
 /**
  * Format dimension name for display
- *
- * @param dimension - Dimension identifier
- * @returns Human-readable dimension name
- *
- * @example
- * ```typescript
- * formatDimensionName('inclusivity'); // "Inclusivity"
- * formatDimensionName('user_impact'); // "User Impact"
- * formatDimensionName('safety'); // "Safety"
- * ```
  */
 export function formatDimensionName(dimension: string): string {
   return dimension
@@ -361,18 +253,8 @@ export function formatDimensionName(dimension: string): string {
 
 /**
  * Aggregate scores from multiple evaluation results
- *
- * @param results - Array of evaluation results
- * @returns Aggregated statistics
- *
- * @example
- * ```typescript
- * const stats = aggregateScores([result1, result2, result3]);
- * console.log(`Average score: ${stats.averageScore}`);
- * console.log(`Score range: ${stats.minScore} - ${stats.maxScore}`);
- * ```
  */
-export function aggregateScores(results: EvaluationResult[]): {
+export function aggregateScores(results: EvalResult[]): {
   averageScore: number;
   minScore: number;
   maxScore: number;
@@ -389,13 +271,12 @@ export function aggregateScores(results: EvaluationResult[]): {
   const dimensionTotals: Record<string, { total: number; count: number }> = {};
 
   for (const result of results) {
-    const score = result.railScore.score;
+    const score = result.rail_score.score;
     totalScore += score;
     minScore = Math.min(minScore, score);
     maxScore = Math.max(maxScore, score);
 
-    // Aggregate dimension scores
-    for (const [dimension, dimScore] of Object.entries(result.scores)) {
+    for (const [dimension, dimScore] of Object.entries(result.dimension_scores)) {
       if (!dimensionTotals[dimension]) {
         dimensionTotals[dimension] = { total: 0, count: 0 };
       }
@@ -420,17 +301,6 @@ export function aggregateScores(results: EvaluationResult[]): {
 
 /**
  * Check if a score indicates passing threshold
- *
- * @param score - Score value
- * @param threshold - Passing threshold (default: 7.0)
- * @returns True if score meets or exceeds threshold
- *
- * @example
- * ```typescript
- * isPassing(8.5); // true
- * isPassing(6.0); // false
- * isPassing(7.0, 7.0); // true
- * ```
  */
 export function isPassing(score: number, threshold: number = 7.0): boolean {
   return score >= threshold;
@@ -438,18 +308,6 @@ export function isPassing(score: number, threshold: number = 7.0): boolean {
 
 /**
  * Calculate confidence-weighted score
- *
- * Adjusts score based on confidence level
- *
- * @param score - Score value
- * @param confidence - Confidence value (0-1)
- * @returns Confidence-weighted score
- *
- * @example
- * ```typescript
- * confidenceWeightedScore(9.0, 0.9); // ~8.1
- * confidenceWeightedScore(9.0, 0.5); // ~4.5
- * ```
  */
 export function confidenceWeightedScore(
   score: number,

@@ -1,6 +1,6 @@
 import type { RailScore } from './client';
 import type {
-  EvaluationResult,
+  EvalResult,
   MiddlewareConfig,
 } from './types';
 import { RAILBlockedError } from './errors';
@@ -8,17 +8,14 @@ import { RAILBlockedError } from './errors';
 /**
  * Middleware that wraps async functions with RAIL score evaluation.
  *
- * Evaluates input before calling the wrapped function and output after,
- * applying thresholds and invoking callbacks at each stage.
- *
  * @example
  * ```typescript
  * const middleware = new RAILMiddleware(client, {
  *   inputThresholds: { safety: 7.0 },
  *   outputThresholds: { safety: 7.0, fairness: 6.0 },
  *   onOutputEval: (result) => {
- *     console.log('Output score:', result.railScore.score);
- *   }
+ *     console.log('Output score:', result.rail_score.score);
+ *   },
  * });
  *
  * const safeLLMCall = middleware.wrap(async (input: string) => {
@@ -32,42 +29,16 @@ export class RAILMiddleware {
   private client: RailScore;
   private config: MiddlewareConfig;
 
-  /**
-   * Create a new middleware instance
-   *
-   * @param client - RailScore client instance
-   * @param config - Middleware configuration with thresholds and callbacks
-   */
   constructor(client: RailScore, config: MiddlewareConfig) {
     this.client = client;
     this.config = config;
   }
 
-  /**
-   * Wrap an async function with RAIL score evaluation
-   *
-   * The returned function will:
-   * 1. Evaluate the input against inputThresholds (if configured)
-   * 2. Call the onInputEval hook (if configured)
-   * 3. Execute the wrapped function
-   * 4. Evaluate the output against outputThresholds (if configured)
-   * 5. Call the onOutputEval hook (if configured)
-   * 6. Apply policy enforcement on output (if configured)
-   *
-   * @param fn - Async function to wrap (takes string input, returns string output)
-   * @returns Wrapped function with RAIL evaluation
-   *
-   * @example
-   * ```typescript
-   * const wrapped = middleware.wrap(myAsyncFn);
-   * const result = await wrapped('input text');
-   * ```
-   */
   wrap(fn: (input: string) => Promise<string>): (input: string) => Promise<string> {
     return async (input: string): Promise<string> => {
       // Pre-call: evaluate input
       if (this.config.inputThresholds) {
-        const inputEval = await this.client.evaluation.basic(input);
+        const inputEval = await this.client.eval({ content: input });
 
         if (this.config.onInputEval) {
           this.config.onInputEval(inputEval);
@@ -81,7 +52,7 @@ export class RAILMiddleware {
 
       // Post-call: evaluate output
       if (this.config.outputThresholds) {
-        const outputEval = await this.client.evaluation.basic(output);
+        const outputEval = await this.client.eval({ content: output });
 
         if (this.config.onOutputEval) {
           this.config.onOutputEval(outputEval);
@@ -98,18 +69,18 @@ export class RAILMiddleware {
               throw new RAILBlockedError(
                 `Output blocked: dimensions [${failedDims.join(', ')}] below threshold`,
                 policyMode,
-                outputEval.scores
+                outputEval.dimension_scores
               );
             }
 
             if (policyMode === 'REGENERATE') {
-              const issues = failedDims.map(dim => {
-                const score = outputEval.scores[dim];
-                return score?.explanation || `${dim} score below threshold`;
+              const maxThreshold = Math.max(...Object.values(this.config.outputThresholds));
+              const regenResult = await this.client.safeRegenerate({
+                content: output,
+                maxRegenerations: 1,
+                thresholds: { overall: { score: maxThreshold } },
               });
-
-              const regenerated = await this.client.evaluation.protectedRegenerate(output, issues);
-              return regenerated.content;
+              return regenResult.best_content || output;
             }
 
             if (policyMode === 'CUSTOM' && this.config.policy.customCallback) {
@@ -120,7 +91,6 @@ export class RAILMiddleware {
             }
           }
         } else {
-          // No policy — just check thresholds
           this.checkThresholds(outputEval, this.config.outputThresholds, 'output');
         }
       }
@@ -129,12 +99,8 @@ export class RAILMiddleware {
     };
   }
 
-  /**
-   * Check thresholds and throw if any dimension fails
-   * @internal
-   */
   private checkThresholds(
-    evaluation: EvaluationResult,
+    evaluation: EvalResult,
     thresholds: Record<string, number>,
     stage: string
   ): void {
@@ -143,22 +109,18 @@ export class RAILMiddleware {
       throw new RAILBlockedError(
         `${stage} blocked: dimensions [${failed.join(', ')}] below threshold`,
         'BLOCK',
-        evaluation.scores
+        evaluation.dimension_scores
       );
     }
   }
 
-  /**
-   * Get dimensions that fail the given thresholds
-   * @internal
-   */
   private getFailedDimensions(
-    evaluation: EvaluationResult,
+    evaluation: EvalResult,
     thresholds: Record<string, number>
   ): string[] {
     const failed: string[] = [];
     for (const [dim, threshold] of Object.entries(thresholds)) {
-      const score = evaluation.scores[dim];
+      const score = evaluation.dimension_scores[dim];
       if (score && score.score < threshold) {
         failed.push(dim);
       }

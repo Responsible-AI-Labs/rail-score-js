@@ -1,5 +1,5 @@
 /**
- * RAIL Score JavaScript/TypeScript SDK
+ * RAIL Score JavaScript/TypeScript SDK v2.2.1
  *
  * Official SDK for the RAIL Score API - Evaluate and generate responsible AI content
  *
@@ -9,12 +9,7 @@
 // Main client
 export { RailScore } from './client';
 
-// API modules
-export { Evaluation } from './evaluation';
-export { Generation } from './generation';
-export { Compliance } from './compliance';
-
-// New feature modules
+// Session, Policy, Middleware
 export { RAILSession } from './session';
 export { PolicyEngine } from './policy';
 export { RAILMiddleware } from './middleware';
@@ -35,33 +30,34 @@ export type { RAILGuardrailConfig, GuardResult } from './observability/guardrail
 // Types
 export type {
   RailScoreConfig,
-  RailScoreValue,
-  DimensionScore,
-  EvaluationMetadata,
-  EvaluationResult,
-  EvaluationOptions,
-  EvaluationMode,
-  BatchEvaluationResult,
-  BatchItem,
-  ContextChunk,
-  RagEvaluationResult,
   Dimension,
   DimensionInput,
-  ScoreLabel,
-  GenerationOptions,
-  GenerationResult,
+  DimensionScore,
+  EvaluationMode,
+  ContentDomain,
+  UseCase,
+  EvalParams,
+  EvalIssue,
+  EvalResult,
+  RegenerationModel,
+  SafeRegenerateParams,
+  SafeRegenerateContinueParams,
+  SafeRegenerateResult,
+  IterationRecord,
+  RailPrompt,
   ComplianceFramework,
-  ComplianceCheckOptions,
+  ComplianceFrameworkInput,
+  ComplianceContext,
+  ComplianceCheckSingleParams,
+  ComplianceCheckMultiParams,
+  ComplianceCheckParams,
+  RequirementResult,
+  ComplianceIssue,
+  RiskClassificationDetail,
   ComplianceResult,
-  ComplianceRequirement,
-  ComplianceViolation,
-  ProtectedEvaluationResult,
-  ProtectedRegenerateResult,
-  CreditBalance,
-  UsageRecord,
-  UsageStats,
+  MultiComplianceResult,
   HealthCheckResponse,
-  VersionInfo,
+  ScoreLabel,
   SessionConfig,
   SessionMetrics,
   PolicyMode,
@@ -84,6 +80,8 @@ export {
   ContentTooHarmfulError,
   EvaluationFailedError,
   ServiceUnavailableError,
+  SessionExpiredError,
+  NotImplementedByServerError,
   RAILBlockedError,
 } from './errors';
 
@@ -97,6 +95,8 @@ export {
   normalizeWeights,
   normalizeWeightsTo100,
   normalizeDimensionName,
+  resolveFrameworkAlias,
+  validateWeightsSum100,
   calculateWeightedScore,
   getLowestScoringDimension,
   getHighestScoringDimension,

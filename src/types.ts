@@ -6,150 +6,8 @@ export interface RailScoreConfig {
   apiKey: string;
   /** Base URL for the API (defaults to https://api.responsibleailabs.ai) */
   baseUrl?: string;
-  /** Request timeout in milliseconds (defaults to 60000) */
+  /** Request timeout in milliseconds (defaults to 30000) */
   timeout?: number;
-}
-
-/**
- * RAIL Score value with confidence level
- */
-export interface RailScoreValue {
-  /** Score value from 0-10 */
-  score: number;
-  /** Confidence level from 0-1 */
-  confidence: number;
-}
-
-/**
- * Score label indicating quality tier
- */
-export type ScoreLabel = 'Excellent' | 'Good' | 'Needs improvement' | 'Poor' | 'Critical';
-
-/**
- * Score for an individual dimension with explanation
- */
-export interface DimensionScore extends RailScoreValue {
-  /** Explanation of the score */
-  explanation: string;
-  /** List of identified issues (if any) */
-  issues?: string[];
-  /** Human-readable score label */
-  label?: ScoreLabel;
-}
-
-/**
- * Metadata about the evaluation request
- */
-export interface EvaluationMetadata {
-  /** Request ID for tracking */
-  reqId: string;
-  /** Service tier used (fast, balanced, advanced) */
-  tier: string;
-  /** Time spent in queue (milliseconds) */
-  queueWaitTimeMs: number;
-  /** Processing time (milliseconds) */
-  processingTimeMs: number;
-  /** Credits consumed by this request */
-  creditsConsumed: number;
-  /** Timestamp of the evaluation */
-  timestamp: string;
-}
-
-/**
- * Complete evaluation result
- */
-export interface EvaluationResult {
-  /** Overall RAIL Score */
-  railScore: RailScoreValue;
-  /** Individual dimension scores */
-  scores: Record<string, DimensionScore>;
-  /** Request metadata */
-  metadata: EvaluationMetadata;
-}
-
-/**
- * Evaluation mode controlling depth of analysis
- */
-export type EvaluationMode = 'basic' | 'deep';
-
-/**
- * Options for evaluation requests
- */
-export interface EvaluationOptions {
-  /** Custom weights for dimensions */
-  weights?: Record<string, number>;
-  /** Service tier to use */
-  tier?: 'fast' | 'balanced' | 'advanced';
-  /** Specific dimensions to evaluate */
-  dimensions?: Dimension[];
-  /** Evaluation mode (basic or deep analysis) */
-  mode?: EvaluationMode;
-  /** Content domain for specialized scoring */
-  domain?: string;
-  /** Specific use case context */
-  usecase?: string;
-}
-
-/**
- * Batch evaluation result
- */
-export interface BatchEvaluationResult {
-  /** Array of evaluation results */
-  results: EvaluationResult[];
-  /** Total number of items processed */
-  totalItems: number;
-  /** Number of successful evaluations */
-  successful: number;
-  /** Number of failed evaluations */
-  failed: number;
-}
-
-/**
- * Batch evaluation item
- */
-export interface BatchItem {
-  /** Content to evaluate */
-  content: string;
-  /** Optional item ID for tracking */
-  id?: string;
-}
-
-/**
- * RAG evaluation context chunk
- */
-export interface ContextChunk {
-  /** Content of the context chunk */
-  content: string;
-  /** Optional source/reference */
-  source?: string;
-  /** Optional relevance score */
-  relevance?: number;
-}
-
-/**
- * RAG evaluation result
- */
-export interface RagEvaluationResult {
-  /** Overall RAG quality score */
-  ragScore: RailScoreValue;
-  /** Individual metric scores */
-  metrics: {
-    /** Context relevance score */
-    contextRelevance: RailScoreValue;
-    /** Answer faithfulness score */
-    faithfulness: RailScoreValue;
-    /** Answer relevance score */
-    answerRelevance: RailScoreValue;
-  };
-  /** Detailed analysis */
-  analysis: {
-    /** Issues found in the RAG response */
-    issues: string[];
-    /** Suggestions for improvement */
-    suggestions: string[];
-  };
-  /** Request metadata */
-  metadata: EvaluationMetadata;
 }
 
 /**
@@ -166,216 +24,397 @@ export type Dimension =
   | 'user_impact';
 
 /**
- * Input dimension type that accepts both current and deprecated names
- * Allows 'legal_compliance' for backward compatibility (maps to 'inclusivity')
+ * Input dimension type that accepts both current and deprecated names.
+ * Allows 'legal_compliance' for backward compatibility (maps to 'inclusivity').
  */
 export type DimensionInput = Dimension | 'legal_compliance';
 
 /**
- * Generation options
+ * Evaluation mode
  */
-export interface GenerationOptions {
-  /** Target RAIL Score (0-10) */
-  targetScore?: number;
-  /** Dimensions to optimize for */
+export type EvaluationMode = 'basic' | 'deep';
+
+/**
+ * Available content domains
+ */
+export type ContentDomain = 'general' | 'healthcare' | 'finance' | 'legal' | 'education' | 'code';
+
+/**
+ * Available use cases
+ */
+export type UseCase = 'general' | 'chatbot' | 'content_generation' | 'summarization' | 'translation' | 'code_generation';
+
+// ─── Eval Types ───────────────────────────────────────────────────────────────
+
+/**
+ * Parameters for POST /railscore/v1/eval
+ */
+export interface EvalParams {
+  /** Text to evaluate (10-10,000 chars) */
+  content: string;
+  /** "basic" (fast) or "deep" (detailed with explanations) */
+  mode?: EvaluationMode;
+  /** Subset of dimensions to evaluate */
   dimensions?: Dimension[];
-  /** Maximum number of iterations */
-  maxIterations?: number;
-  /** Temperature for generation */
+  /** Custom weights per dimension (must sum to 100) */
+  weights?: Record<string, number>;
+  /** Additional context for evaluation */
+  context?: string;
+  /** Content domain */
+  domain?: ContentDomain;
+  /** Use case */
+  usecase?: UseCase;
+  /** Include per-dimension explanations */
+  includeExplanations?: boolean;
+  /** Include per-dimension issue lists */
+  includeIssues?: boolean;
+  /** Include improvement suggestions */
+  includeSuggestions?: boolean;
+}
+
+/**
+ * Score for an individual dimension
+ */
+export interface DimensionScore {
+  /** Score value from 0-10 */
+  score: number;
+  /** Confidence level from 0-1 */
+  confidence: number;
+  /** Explanation (deep mode or if requested) */
+  explanation?: string;
+  /** List of identified issues (deep mode or if requested) */
+  issues?: string[];
+}
+
+/**
+ * Issue identified during evaluation
+ */
+export interface EvalIssue {
+  /** Dimension the issue relates to */
+  dimension: string;
+  /** Description of the issue */
+  description: string;
+}
+
+/**
+ * Complete evaluation result from POST /railscore/v1/eval
+ */
+export interface EvalResult {
+  /** Overall RAIL Score */
+  rail_score: {
+    /** Score value from 0-10 */
+    score: number;
+    /** Confidence level from 0-1 */
+    confidence: number;
+    /** Human-readable summary */
+    summary: string;
+  };
+  /** Overall explanation */
+  explanation: string;
+  /** Individual dimension scores keyed by dimension name */
+  dimension_scores: Record<string, DimensionScore>;
+  /** Issues found */
+  issues?: EvalIssue[];
+  /** Improvement suggestions */
+  improvement_suggestions?: string[];
+  /** Whether the result was served from cache */
+  from_cache: boolean;
+}
+
+// ─── Safe Regenerate Types ────────────────────────────────────────────────────
+
+/**
+ * Regeneration model options
+ */
+export type RegenerationModel = 'RAIL_Safe_LLM' | 'external';
+
+/**
+ * Parameters for POST /railscore/v1/safe-regenerate
+ */
+export interface SafeRegenerateParams {
+  /** Text to evaluate/regenerate (10-10,000 chars) */
+  content: string;
+  /** "basic" or "deep" */
+  mode?: EvaluationMode;
+  /** Max regeneration attempts (1-5) */
+  maxRegenerations?: number;
+  /** "RAIL_Safe_LLM" (server-side) or "external" (client-orchestrated) */
+  regenerationModel?: RegenerationModel;
+  /** Score/confidence thresholds, e.g. { overall: { score: 8.0, confidence: 0.5 } } */
+  thresholds?: Record<string, any>;
+  /** Additional context */
+  context?: string;
+  /** Content domain */
+  domain?: ContentDomain;
+  /** Use case */
+  usecase?: UseCase;
+  /** Original user query for context */
+  userQuery?: string;
+  /** Dimension weights (must sum to 100) */
+  weights?: Record<string, number>;
+  /** Policy hint, e.g. { on_failure: "return_best" } */
+  policyHint?: Record<string, any>;
+}
+
+/**
+ * Parameters for POST /railscore/v1/safe-regenerate/continue
+ */
+export interface SafeRegenerateContinueParams {
+  /** Session ID from initial response (starts with "sr_") */
+  sessionId: string;
+  /** Your regenerated content (10-10,000 chars) */
+  regeneratedContent: string;
+}
+
+/**
+ * Iteration record in safe-regenerate history
+ */
+export interface IterationRecord {
+  iteration: number;
+  content: string;
+  scores: any;
+  thresholds_met: boolean;
+  failing_dimensions: string[];
+  improvement_from_previous: number | null;
+  latency_ms: number;
+}
+
+/**
+ * RAIL prompt for external mode regeneration
+ */
+export interface RailPrompt {
+  system_prompt: string;
+  user_prompt: string;
   temperature?: number;
 }
 
 /**
- * Generation result
+ * Result from POST /railscore/v1/safe-regenerate and /safe-regenerate/continue
  */
-export interface GenerationResult {
-  /** Generated content */
-  content: string;
-  /** RAIL Score of generated content */
-  railScore: RailScoreValue;
-  /** Dimension scores */
-  scores: Record<string, DimensionScore>;
-  /** Number of iterations used */
-  iterations: number;
+export interface SafeRegenerateResult {
+  /** "passed" | "max_iterations_reached" | "awaiting_regeneration" */
+  status: 'passed' | 'max_iterations_reached' | 'awaiting_regeneration';
+  /** Original content that was submitted */
+  original_content: string;
+  /** Credits consumed */
+  credits_consumed: number;
   /** Request metadata */
-  metadata: EvaluationMetadata;
+  metadata: {
+    req_id: string;
+    mode: string;
+    total_iterations?: number;
+    total_latency_ms?: number;
+  };
+  /** Credits breakdown */
+  credits_breakdown?: {
+    evaluations: number;
+    regenerations: number;
+    total: number;
+  };
+  /** Best content found (when status is "passed" or "max_iterations_reached") */
+  best_content?: string;
+  /** Best iteration number */
+  best_iteration?: number;
+  /** Best scores achieved */
+  best_scores?: {
+    rail_score: { score: number; confidence?: number; summary?: string };
+    dimension_scores: Record<string, { score: number; confidence: number }>;
+  };
+  /** History of all iterations */
+  iteration_history?: IterationRecord[];
+  /** Session ID for external mode (starts with "sr_") */
+  session_id?: string;
+  /** Current iteration number (external mode) */
+  iteration?: number;
+  /** Remaining iterations (external mode) */
+  iterations_remaining?: number;
+  /** Current scores (external mode) */
+  current_scores?: any;
+  /** Prompt for external regeneration */
+  rail_prompt?: RailPrompt;
 }
 
+// ─── Compliance Types ─────────────────────────────────────────────────────────
+
 /**
- * Compliance framework types
+ * Supported compliance frameworks (canonical IDs)
  */
 export type ComplianceFramework =
   | 'gdpr'
-  | 'hipaa'
   | 'ccpa'
-  | 'sox'
-  | 'pci_dss'
-  | 'iso27001'
-  | 'nist'
+  | 'hipaa'
   | 'eu_ai_act'
   | 'india_dpdp'
-  | 'india_ai_governance';
+  | 'india_ai_gov';
 
 /**
- * Options for compliance check operations
+ * Framework input type including aliases
  */
-export interface ComplianceCheckOptions {
-  /** Additional context for compliance evaluation */
-  context?: string;
-  /** Enable strict mode for more rigorous checking */
-  strict_mode?: boolean;
+export type ComplianceFrameworkInput =
+  | ComplianceFramework
+  | 'ai_act'
+  | 'euaia'
+  | 'dpdp'
+  | 'ai_governance'
+  | 'india_ai';
+
+/**
+ * Compliance check context
+ */
+export interface ComplianceContext {
+  domain?: string;
+  system_type?: string;
+  jurisdiction?: string;
+  data_subjects?: string;
+  decision_type?: string;
+  data_types?: string[];
+  processing_purpose?: string;
+  risk_indicators?: string[];
+  cross_border?: boolean;
 }
 
 /**
- * Compliance check result
+ * Parameters for single-framework compliance check
+ */
+export interface ComplianceCheckSingleParams {
+  /** Text to evaluate (max 50,000 chars) */
+  content: string;
+  /** Single framework ID */
+  framework: ComplianceFrameworkInput;
+  /** Context for compliance evaluation */
+  context?: ComplianceContext;
+  /** Use strict mode (8.5 threshold instead of 7.0) */
+  strictMode?: boolean;
+  /** Include per-dimension explanations */
+  includeExplanations?: boolean;
+}
+
+/**
+ * Parameters for multi-framework compliance check
+ */
+export interface ComplianceCheckMultiParams {
+  /** Text to evaluate (max 50,000 chars) */
+  content: string;
+  /** List of framework IDs (max 5) */
+  frameworks: ComplianceFrameworkInput[];
+  /** Context for compliance evaluation */
+  context?: ComplianceContext;
+  /** Use strict mode (8.5 threshold instead of 7.0) */
+  strictMode?: boolean;
+  /** Include per-dimension explanations */
+  includeExplanations?: boolean;
+}
+
+/**
+ * Union type for compliance check parameters
+ */
+export type ComplianceCheckParams = ComplianceCheckSingleParams | ComplianceCheckMultiParams;
+
+/**
+ * Requirement evaluation result
+ */
+export interface RequirementResult {
+  requirement_id: string;
+  requirement: string;
+  article: string;
+  reference_url: string;
+  status: string;
+  score: number;
+  confidence: number;
+  threshold: number;
+  ai_specific: boolean;
+  dimension_sources: string[];
+  evaluation_method: string;
+  issue?: string;
+  penalty_exposure?: string;
+}
+
+/**
+ * Compliance issue
+ */
+export interface ComplianceIssue {
+  id: string;
+  description: string;
+  dimension: string;
+  severity: string;
+  requirement: string;
+  article: string;
+  reference_url: string;
+  remediation_effort: string;
+  remediation_deadline_days?: number;
+}
+
+/**
+ * Risk classification detail (EU AI Act only)
+ */
+export interface RiskClassificationDetail {
+  tier: string;
+  basis: string;
+  obligations?: string[];
+}
+
+/**
+ * Single-framework compliance result
  */
 export interface ComplianceResult {
-  /** Framework checked */
-  framework: ComplianceFramework;
-  /** Overall compliance status */
-  compliant: boolean;
-  /** Compliance score (0-10) */
-  score: number;
-  /** Individual requirement results */
-  requirements: ComplianceRequirement[];
-  /** Violations found */
-  violations: ComplianceViolation[];
-  /** Recommendations */
-  recommendations: string[];
-  /** Request metadata */
-  metadata: EvaluationMetadata;
-}
-
-/**
- * Individual compliance requirement
- */
-export interface ComplianceRequirement {
-  /** Requirement ID */
-  id: string;
-  /** Requirement name */
-  name: string;
-  /** Compliance status */
-  status: 'compliant' | 'non_compliant' | 'partial' | 'not_applicable';
-  /** Score for this requirement */
-  score: number;
-  /** Description */
-  description: string;
-}
-
-/**
- * Compliance violation
- */
-export interface ComplianceViolation {
-  /** Violation severity */
-  severity: 'critical' | 'high' | 'medium' | 'low';
-  /** Requirement violated */
-  requirement: string;
-  /** Description of the violation */
-  description: string;
-  /** Location in content (if applicable) */
-  location?: string;
-  /** Remediation suggestion */
-  remediation: string;
-}
-
-/**
- * Protected evaluation result - extends EvaluationResult with pass/fail info
- */
-export interface ProtectedEvaluationResult extends EvaluationResult {
-  /** Whether the content passed the protection threshold */
-  passed: boolean;
-  /** Dimensions that failed the threshold */
-  failedDimensions: string[];
-}
-
-/**
- * Result from protected content regeneration
- */
-export interface ProtectedRegenerateResult {
-  /** Regenerated content */
-  content: string;
-  /** RAIL Score of the regenerated content */
-  railScore: RailScoreValue;
-  /** Issues that were fixed during regeneration */
-  fixedIssues: string[];
-}
-
-/**
- * Credit balance information
- */
-export interface CreditBalance {
-  /** Current balance */
-  balance: number;
-  /** Total allocated credits */
-  totalAllocated: number;
-  /** Credits used */
-  used: number;
-  /** Plan tier */
-  tier: string;
-  /** Next renewal date */
-  renewalDate?: string;
-}
-
-/**
- * Usage record
- */
-export interface UsageRecord {
-  /** Timestamp */
-  timestamp: string;
-  /** Endpoint used */
-  endpoint: string;
-  /** Credits consumed */
-  creditsConsumed: number;
-  /** Request ID */
-  reqId: string;
-  /** Status */
-  status: 'success' | 'failed';
-}
-
-/**
- * Usage statistics
- */
-export interface UsageStats {
-  /** Total records returned */
-  total: number;
-  /** Usage records */
-  records: UsageRecord[];
-  /** Date range */
-  dateRange: {
-    from: string;
-    to: string;
+  framework: string;
+  framework_version: string;
+  framework_url: string;
+  evaluated_at: string;
+  compliance_score: {
+    score: number;
+    confidence: number;
+    /** "Critical" | "Poor" | "Fair" | "Good" | "Excellent" */
+    label: string;
+    summary: string;
   };
-  /** Summary statistics */
-  summary: {
-    totalCredits: number;
-    totalRequests: number;
-    successRate: number;
+  dimension_scores: Record<string, DimensionScore>;
+  requirements_checked: number;
+  requirements_passed: number;
+  requirements_failed: number;
+  requirements_warned: number;
+  requirements: RequirementResult[];
+  issues: ComplianceIssue[];
+  improvement_suggestions: string[];
+  risk_classification_detail?: RiskClassificationDetail;
+  from_cache: boolean;
+  credits?: number;
+}
+
+/**
+ * Multi-framework compliance result
+ */
+export interface MultiComplianceResult {
+  results: Record<string, ComplianceResult>;
+  cross_framework_summary: {
+    frameworks_evaluated: number;
+    average_score: number;
+    weakest_framework: string;
+    weakest_score: number;
+    credits?: number;
   };
 }
 
+// ─── Health Types ─────────────────────────────────────────────────────────────
+
 /**
- * Health check response
+ * Health check response from GET /health
  */
 export interface HealthCheckResponse {
-  /** Service status */
-  ok: boolean;
-  /** API version */
-  version: string;
-  /** Additional status info */
-  status?: string;
+  /** Service status, e.g. "healthy" */
+  status: string;
+  /** Service name, e.g. "rail-score-engine" */
+  service: string;
 }
 
+// ─── Utility Types ────────────────────────────────────────────────────────────
+
 /**
- * Version information from the API
+ * Score label indicating quality tier
  */
-export interface VersionInfo {
-  /** API version string */
-  version: string;
-  /** Minimum supported SDK version */
-  minSdkVersion?: string;
-  /** Available features */
-  features?: string[];
-}
+export type ScoreLabel = 'Excellent' | 'Good' | 'Fair' | 'Poor' | 'Critical';
+
+// ─── Secondary Module Types ──────────────────────────────────────────────────
 
 /**
  * Configuration for multi-turn sessions
@@ -421,7 +460,7 @@ export interface PolicyConfig {
   /** Score thresholds per dimension (scores below trigger policy action) */
   thresholds: Record<string, number>;
   /** Custom callback for CUSTOM mode */
-  customCallback?: (content: string, result: EvaluationResult) => Promise<string | null>;
+  customCallback?: (content: string, result: EvalResult) => Promise<string | null>;
 }
 
 /**
@@ -433,9 +472,9 @@ export interface MiddlewareConfig {
   /** Thresholds for output content evaluation */
   outputThresholds?: Record<string, number>;
   /** Callback when input is evaluated */
-  onInputEval?: (result: EvaluationResult) => void;
+  onInputEval?: (result: EvalResult) => void;
   /** Callback when output is evaluated */
-  onOutputEval?: (result: EvaluationResult) => void;
+  onOutputEval?: (result: EvalResult) => void;
   /** Policy enforcement config for output */
   policy?: PolicyConfig;
 }
