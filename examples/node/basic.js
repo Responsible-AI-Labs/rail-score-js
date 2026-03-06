@@ -15,7 +15,7 @@ const { RailScore, formatScore, getScoreGrade, getScoreLabel, formatDimensionNam
 async function main() {
   // Initialize the client with your API key
   const client = new RailScore({
-    apiKey: process.env.RAIL_API_KEY || 'your-api-key-here',
+    apiKey: process.env.RAIL_API_KEY || 'your-rail-api-key',
   });
 
   console.log('🚀 RAIL Score SDK - Basic Usage Example\n');

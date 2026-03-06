@@ -11,7 +11,7 @@ const { RailScore, formatScore } = require('@responsible-ai-labs/rail-score');
 
 async function main() {
   const client = new RailScore({
-    apiKey: process.env.RAIL_API_KEY || 'your-api-key-here',
+    apiKey: process.env.RAIL_API_KEY || 'your-rail-api-key',
     timeout: 120000, // Recommended 120s for safe-regenerate
   });
 

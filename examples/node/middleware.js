@@ -18,7 +18,7 @@ async function fakeLLMCall(input) {
 
 async function main() {
   const client = new RailScore({
-    apiKey: process.env.RAIL_API_KEY || 'your-api-key-here',
+    apiKey: process.env.RAIL_API_KEY || 'your-rail-api-key',
   });
 
   console.log('RAIL Score SDK - Middleware Example\n');
