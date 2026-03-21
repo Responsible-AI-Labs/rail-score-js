@@ -5,6 +5,11 @@ All notable changes to the RAIL Score JavaScript/TypeScript SDK will be document
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.1] - 2026-03-21
+
+### Changed
+- Updated README with full v2.3.0 documentation: telemetry, caching, retry, session enhancements, middleware hooks, provider per-call overrides, and Langfuse improvements
+
 ## [2.3.0] - 2026-03-21
 
 ### Added

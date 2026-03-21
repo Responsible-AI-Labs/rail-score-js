@@ -1,6 +1,6 @@
 {
   "name": "@responsible-ai-labs/rail-score",
-  "version": "2.3.0",
+  "version": "2.3.1",
   "description": "JavaScript/TypeScript SDK for RAIL Score API - Evaluate responsible AI content",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
