@@ -202,7 +202,7 @@ describe('RailScore Client', () => {
         expect.any(String),
         expect.objectContaining({
           headers: expect.objectContaining({
-            'User-Agent': 'rail-score-js/2.2.1',
+            'User-Agent': 'rail-score-js/2.3.0',
           }),
         })
       );

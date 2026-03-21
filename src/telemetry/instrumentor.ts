@@ -48,28 +48,28 @@ export class RAILInstrumentor {
       const startTime = Date.now();
       const spanName = `rail.request ${endpoint}`;
 
+      const attributes: Record<string, string | number | boolean> = {
+        [ATTR_ENDPOINT]: endpoint,
+      };
+
+      // Try to extract mode from body before starting span
+      if (options?.body) {
+        try {
+          const body =
+            typeof options.body === 'string'
+              ? JSON.parse(options.body)
+              : options.body;
+          if (body.mode) {
+            attributes[ATTR_MODE] = body.mode;
+          }
+        } catch {
+          // ignore parse errors
+        }
+      }
+
       return telemetry.startSpan(
         spanName,
         async (span: any) => {
-          const attributes: Record<string, string | number | boolean> = {
-            [ATTR_ENDPOINT]: endpoint,
-          };
-
-          // Try to extract mode from body
-          if (options?.body) {
-            try {
-              const body =
-                typeof options.body === 'string'
-                  ? JSON.parse(options.body)
-                  : options.body;
-              if (body.mode) {
-                attributes[ATTR_MODE] = body.mode;
-              }
-            } catch {
-              // ignore parse errors
-            }
-          }
-
           if (span) {
             span.setAttributes(attributes);
           }

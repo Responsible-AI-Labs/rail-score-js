@@ -472,7 +472,7 @@ export class RailScore {
     if (lastError) {
       throw new NetworkError(`Network request failed: ${lastError.message}`, lastError);
     }
-    throw new NetworkError('Request failed after retries', null);
+    throw new NetworkError('Request failed after retries', undefined);
   }
 
   /**

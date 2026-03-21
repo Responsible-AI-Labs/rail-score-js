@@ -111,6 +111,7 @@ export class RAILMiddleware {
         } else {
           this.checkThresholds(outputEval, this.config.outputThresholds, 'output');
         }
+      }
       return output;
     };
   }

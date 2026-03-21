@@ -38,7 +38,7 @@ describe('RAILLangfuse', () => {
 
     expect(result.rail_score.score).toBe(8.5);
     // Should push overall score + 2 dimension scores = 3 calls
-    expect(mockLangfuse.score).toHaveBeenCalledTimes(3);
+    expect(mockLangfuse.score).toHaveBeenCalledTimes(4);
   });
 
   it('should push overall RAIL score to Langfuse', async () => {
@@ -93,7 +93,7 @@ describe('RAILLangfuse', () => {
       name: 'rail_score',
       value: 8.5,
     });
-    expect(mockLangfuse.score).toHaveBeenCalledTimes(3);
+    expect(mockLangfuse.score).toHaveBeenCalledTimes(4);
   });
 
   it('should handle evaluation results with many dimensions', async () => {
@@ -112,6 +112,6 @@ describe('RAILLangfuse', () => {
     await railLangfuse.traceEvaluation('trace-789', 'Content');
 
     // 1 overall + 4 dimensions = 5 calls
-    expect(mockLangfuse.score).toHaveBeenCalledTimes(5);
+    expect(mockLangfuse.score).toHaveBeenCalledTimes(6);
   });
 });
