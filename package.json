@@ -1,6 +1,6 @@
 {
   "name": "@responsible-ai-labs/rail-score",
-  "version": "2.2.1",
+  "version": "2.3.0",
   "description": "JavaScript/TypeScript SDK for RAIL Score API - Evaluate responsible AI content",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
@@ -71,7 +71,11 @@
     "openai": ">=4.0.0",
     "@anthropic-ai/sdk": ">=0.20.0",
     "@google/generative-ai": ">=0.1.0",
-    "langfuse": ">=2.0.0"
+    "langfuse": ">=2.0.0",
+    "@opentelemetry/api": ">=1.0.0",
+    "@opentelemetry/sdk-node": ">=0.40.0",
+    "@opentelemetry/exporter-trace-otlp-grpc": ">=0.40.0",
+    "@opentelemetry/exporter-trace-otlp-http": ">=0.40.0"
   },
   "peerDependenciesMeta": {
     "openai": {
@@ -84,6 +88,18 @@
       "optional": true
     },
     "langfuse": {
+      "optional": true
+    },
+    "@opentelemetry/api": {
+      "optional": true
+    },
+    "@opentelemetry/sdk-node": {
+      "optional": true
+    },
+    "@opentelemetry/exporter-trace-otlp-grpc": {
+      "optional": true
+    },
+    "@opentelemetry/exporter-trace-otlp-http": {
       "optional": true
     }
   }

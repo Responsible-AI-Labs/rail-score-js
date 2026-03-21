@@ -8,6 +8,10 @@ export interface RailScoreConfig {
   baseUrl?: string;
   /** Request timeout in milliseconds (defaults to 30000) */
   timeout?: number;
+  /** Enable request-level caching (5-minute TTL). Default: false */
+  cache?: boolean;
+  /** Enable automatic retry with exponential backoff on 429/500/502/503. Default: false */
+  retry?: boolean;
 }
 
 /**
@@ -414,6 +418,22 @@ export interface HealthCheckResponse {
  */
 export type ScoreLabel = 'Excellent' | 'Good' | 'Fair' | 'Poor' | 'Critical';
 
+/**
+ * Summary of RAIL scores across turns in a session
+ */
+export interface ScoresSummary {
+  /** Total number of turns evaluated */
+  turns: number;
+  /** Average overall score across all turns */
+  averageScore: number;
+  /** Lowest overall score observed */
+  lowestScore: number;
+  /** Number of turns where score fell below the quality threshold */
+  belowThresholdCount: number;
+  /** Number of times regeneration was used (future use) */
+  regenerationCount: number;
+}
+
 // ─── Secondary Module Types ──────────────────────────────────────────────────
 
 /**
@@ -477,4 +497,12 @@ export interface MiddlewareConfig {
   onOutputEval?: (result: EvalResult) => void;
   /** Policy enforcement config for output */
   policy?: PolicyConfig;
+  /** Async hook called before the wrapped function, receives the raw input string */
+  preHook?: (input: string) => Promise<void>;
+  /** Async hook called after output eval, receives output and eval result */
+  postHook?: (output: string, result: EvalResult) => Promise<void>;
+  /** Auto-upgrade to 'deep' eval mode when output confidence is below lowConfidenceThreshold. Default: false */
+  upgradeOnLowConfidence?: boolean;
+  /** Confidence threshold that triggers mode upgrade (default: 0.6) */
+  lowConfidenceThreshold?: number;
 }

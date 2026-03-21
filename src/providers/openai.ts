@@ -1,9 +1,25 @@
 import type { RailScore } from '../client';
-import type { EvalResult } from '../types';
+import type { EvalResult, EvaluationMode } from '../types';
 import { RAILBlockedError } from '../errors';
 
 export interface RAILOpenAIConfig {
   thresholds?: Record<string, number>;
+}
+
+export interface RAILOpenAIResponse {
+  response: any;
+  content: string;
+  railScore: EvalResult['rail_score'];
+  evaluation: EvalResult;
+  /** Whether the content was regenerated to meet thresholds */
+  wasRegenerated: boolean;
+  /** The original pre-regeneration content (undefined if not regenerated) */
+  originalContent?: string;
+  usage: {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+  };
 }
 
 /**
@@ -30,26 +46,42 @@ export class RAILOpenAI {
     this.config = config || {};
   }
 
-  async chat(params: any): Promise<{
-    response: any;
-    content: string;
-    railScore: EvalResult['rail_score'];
-    evaluation: EvalResult;
-  }> {
-    const response = await this.openai.chat.completions.create(params);
+  async chat(
+    params: any & { railMode?: EvaluationMode; railSkip?: boolean }
+  ): Promise<RAILOpenAIResponse> {
+    const { railMode, railSkip, ...openaiParams } = params;
+
+    const response = await this.openai.chat.completions.create(openaiParams);
     const content = response.choices?.[0]?.message?.content || '';
 
-    if (!content) {
+    const usage = {
+      prompt_tokens: response.usage?.prompt_tokens ?? 0,
+      completion_tokens: response.usage?.completion_tokens ?? 0,
+      total_tokens: response.usage?.total_tokens ?? 0,
+    };
+
+    if (railSkip || !content) {
       const emptyEval: EvalResult = {
         rail_score: { score: 0, confidence: 0, summary: '' },
         explanation: '',
         dimension_scores: {},
         from_cache: false,
       };
-      return { response, content: '', railScore: emptyEval.rail_score, evaluation: emptyEval };
+      return {
+        response,
+        content: content || '',
+        railScore: emptyEval.rail_score,
+        evaluation: emptyEval,
+        wasRegenerated: false,
+        originalContent: undefined,
+        usage,
+      };
     }
 
-    const evaluation = await this.client.eval({ content });
+    const evaluation = await this.client.eval({
+      content,
+      ...(railMode && { mode: railMode }),
+    });
 
     if (this.config.thresholds) {
       const failed: string[] = [];
@@ -69,6 +101,14 @@ export class RAILOpenAI {
       }
     }
 
-    return { response, content, railScore: evaluation.rail_score, evaluation };
+    return {
+      response,
+      content,
+      railScore: evaluation.rail_score,
+      evaluation,
+      wasRegenerated: false,
+      originalContent: undefined,
+      usage,
+    };
   }
 }

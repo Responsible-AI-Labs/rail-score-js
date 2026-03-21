@@ -4,6 +4,8 @@ import type {
   EvaluationMode,
   SessionConfig,
   SessionMetrics,
+  ScoresSummary,
+  Dimension,
 } from './types';
 
 const SESSION_DEFAULTS: Required<SessionConfig> = {
@@ -33,6 +35,7 @@ export class RAILSession {
   private client: RailScore;
   private config: Required<SessionConfig>;
   private history: EvalResult[] = [];
+  private regenerationCount = 0;
 
   constructor(client: RailScore, config?: SessionConfig) {
     this.client = client;
@@ -100,6 +103,51 @@ export class RAILSession {
 
   reset(): void {
     this.history = [];
+    this.regenerationCount = 0;
+  }
+
+  /**
+   * Evaluates input content without recording it in the session history.
+   * Use this for quick safety checks of user input before adding it to the session.
+   *
+   * @param content     Text to evaluate
+   * @param dimensions  Optional subset of dimensions to evaluate
+   * @returns           Evaluation result (not stored in history)
+   */
+  async evaluateInput(content: string, dimensions?: Dimension[]): Promise<EvalResult> {
+    return this.client.eval({ content, mode: 'basic', dimensions });
+  }
+
+  /**
+   * Returns a concise summary of scores across all turns in this session.
+   */
+  scoresSummary(): ScoresSummary {
+    const turns = this.history.length;
+
+    if (turns === 0) {
+      return {
+        turns: 0,
+        averageScore: 0,
+        lowestScore: 0,
+        belowThresholdCount: 0,
+        regenerationCount: this.regenerationCount,
+      };
+    }
+
+    const scores = this.history.map((r) => r.rail_score.score);
+    const averageScore = scores.reduce((sum, s) => sum + s, 0) / turns;
+    const lowestScore = Math.min(...scores);
+    const belowThresholdCount = scores.filter(
+      (s) => s < this.config.qualityThreshold
+    ).length;
+
+    return {
+      turns,
+      averageScore,
+      lowestScore,
+      belowThresholdCount,
+      regenerationCount: this.regenerationCount,
+    };
   }
 
   private determineMode(): EvaluationMode {

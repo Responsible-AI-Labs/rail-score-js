@@ -36,6 +36,11 @@ export class RAILMiddleware {
 
   wrap(fn: (input: string) => Promise<string>): (input: string) => Promise<string> {
     return async (input: string): Promise<string> => {
+      // Pre-hook: called before any evaluation or execution
+      if (this.config.preHook) {
+        await this.config.preHook(input);
+      }
+
       // Pre-call: evaluate input
       if (this.config.inputThresholds) {
         const inputEval = await this.client.eval({ content: input });
@@ -52,10 +57,23 @@ export class RAILMiddleware {
 
       // Post-call: evaluate output
       if (this.config.outputThresholds) {
-        const outputEval = await this.client.eval({ content: output });
+        let outputEval = await this.client.eval({ content: output });
+
+        // Upgrade to deep mode if output confidence is low
+        if (this.config.upgradeOnLowConfidence) {
+          const confidenceThreshold = this.config.lowConfidenceThreshold ?? 0.6;
+          if (outputEval.rail_score.confidence < confidenceThreshold) {
+            outputEval = await this.client.eval({ content: output, mode: 'deep' });
+          }
+        }
 
         if (this.config.onOutputEval) {
           this.config.onOutputEval(outputEval);
+        }
+
+        // Post-hook: called after output eval
+        if (this.config.postHook) {
+          await this.config.postHook(output, outputEval);
         }
 
         // Apply policy if configured
@@ -93,8 +111,6 @@ export class RAILMiddleware {
         } else {
           this.checkThresholds(outputEval, this.config.outputThresholds, 'output');
         }
-      }
-
       return output;
     };
   }

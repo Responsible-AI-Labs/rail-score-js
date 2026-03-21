@@ -33,7 +33,16 @@ import { resolveFrameworkAlias, validateWeightsSum100 } from './utils';
 
 const DEFAULT_TIMEOUT = 30000;
 const SAFE_REGENERATE_TIMEOUT = 120000;
-const SDK_VERSION = '2.2.1';
+const SDK_VERSION = '2.3.0';
+
+const RETRY_STATUSES = [429, 500, 502, 503];
+const RETRY_DELAYS_MS = [1000, 2000, 4000, 8000];
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+interface CacheEntry<T> {
+  value: T;
+  expiresAt: number;
+}
 
 /**
  * Main RailScore client for interacting with the RAIL Score API.
@@ -50,6 +59,9 @@ export class RailScore {
   private readonly apiKey: string;
   private readonly baseUrl: string;
   private readonly timeout: number;
+  private readonly cacheEnabled: boolean;
+  private readonly retryEnabled: boolean;
+  private readonly cache = new Map<string, CacheEntry<unknown>>();
 
   constructor(config: RailScoreConfig) {
     if (!config.apiKey) {
@@ -59,6 +71,43 @@ export class RailScore {
     this.apiKey = config.apiKey;
     this.baseUrl = config.baseUrl || 'https://api.responsibleailabs.ai';
     this.timeout = config.timeout || DEFAULT_TIMEOUT;
+    this.cacheEnabled = config.cache ?? false;
+    this.retryEnabled = config.retry ?? false;
+  }
+
+  private buildCacheKey(endpoint: string, options: RequestInit): string {
+    const body = options.body || '';
+    // Sort JSON keys for stable cache key
+    let normalizedBody = body;
+    if (typeof body === 'string' && body.length > 0) {
+      try {
+        const parsed = JSON.parse(body);
+        const sorted = Object.keys(parsed)
+          .sort()
+          .reduce((acc: Record<string, unknown>, k) => {
+            acc[k] = parsed[k];
+            return acc;
+          }, {});
+        normalizedBody = JSON.stringify(sorted);
+      } catch {
+        normalizedBody = body;
+      }
+    }
+    return `${endpoint}:${normalizedBody}`;
+  }
+
+  private getCached<T>(key: string): T | null {
+    const entry = this.cache.get(key) as CacheEntry<T> | undefined;
+    if (!entry) return null;
+    if (Date.now() > entry.expiresAt) {
+      this.cache.delete(key);
+      return null;
+    }
+    return entry.value;
+  }
+
+  private setCached<T>(key: string, value: T): void {
+    this.cache.set(key, { value, expiresAt: Date.now() + CACHE_TTL_MS });
   }
 
   /**
@@ -330,6 +379,9 @@ export class RailScore {
   /**
    * Make an authenticated HTTP request to the API.
    *
+   * Supports optional in-memory caching (5-minute TTL) and exponential backoff retry
+   * on transient errors (429/500/502/503), both controlled by the client config.
+   *
    * @internal
    */
   async request<T>(
@@ -339,36 +391,88 @@ export class RailScore {
   ): Promise<T> {
     const url = `${this.baseUrl}${endpoint}`;
     const effectiveTimeout = customTimeout || this.timeout;
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), effectiveTimeout);
 
-    try {
-      const response = await fetch(url, {
-        ...options,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.apiKey}`,
-          'User-Agent': `rail-score-js/${SDK_VERSION}`,
-          ...options.headers,
-        },
-        signal: controller.signal,
-      });
+    // Cache check — only for eval and health endpoints on success
+    const isCacheable =
+      this.cacheEnabled &&
+      (endpoint === '/railscore/v1/eval' || endpoint === '/health');
 
-      clearTimeout(timeoutId);
-
-      if (!response.ok) {
-        await this.handleError(response);
+    if (isCacheable) {
+      const cacheKey = this.buildCacheKey(endpoint, options);
+      const cached = this.getCached<T>(cacheKey);
+      if (cached !== null) {
+        return cached;
       }
-
-      return await response.json() as T;
-    } catch (error: any) {
-      clearTimeout(timeoutId);
-      if (error instanceof RailScoreError) throw error;
-      if (error.name === 'AbortError') {
-        throw new TimeoutError(`Request timeout after ${effectiveTimeout}ms`);
-      }
-      throw new NetworkError(`Network request failed: ${error.message}`, error);
     }
+
+    const maxAttempts = this.retryEnabled ? 4 : 1; // 1 initial + up to 3 retries
+    let lastResponse: Response | null = null;
+    let lastError: any = null;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      if (attempt > 0) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, RETRY_DELAYS_MS[attempt - 1])
+        );
+      }
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), effectiveTimeout);
+
+      try {
+        lastResponse = await fetch(url, {
+          ...options,
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${this.apiKey}`,
+            'User-Agent': `rail-score-js/${SDK_VERSION}`,
+            ...options.headers,
+          },
+          signal: controller.signal,
+        });
+
+        clearTimeout(timeoutId);
+
+        // Retry on transient status codes (unless this is the last attempt)
+        if (
+          RETRY_STATUSES.includes(lastResponse.status) &&
+          attempt < maxAttempts - 1
+        ) {
+          continue;
+        }
+
+        if (!lastResponse.ok) {
+          await this.handleError(lastResponse);
+        }
+
+        const result = await lastResponse.json() as T;
+
+        if (isCacheable) {
+          const cacheKey = this.buildCacheKey(endpoint, options);
+          this.setCached(cacheKey, result);
+        }
+
+        return result;
+      } catch (error: any) {
+        clearTimeout(timeoutId);
+        if (error instanceof RailScoreError) throw error;
+        if (error.name === 'AbortError') {
+          throw new TimeoutError(`Request timeout after ${effectiveTimeout}ms`);
+        }
+        lastError = error;
+        // Network errors: retry if attempts remain
+        if (attempt < maxAttempts - 1) {
+          continue;
+        }
+        throw new NetworkError(`Network request failed: ${error.message}`, error);
+      }
+    }
+
+    // Should not reach here, but satisfy TypeScript
+    if (lastError) {
+      throw new NetworkError(`Network request failed: ${lastError.message}`, lastError);
+    }
+    throw new NetworkError('Request failed after retries', null);
   }
 
   /**

@@ -1,9 +1,25 @@
 import type { RailScore } from '../client';
-import type { EvalResult } from '../types';
+import type { EvalResult, EvaluationMode } from '../types';
 import { RAILBlockedError } from '../errors';
 
 export interface RAILAnthropicConfig {
   thresholds?: Record<string, number>;
+}
+
+export interface RAILAnthropicResponse {
+  response: any;
+  content: string;
+  railScore: EvalResult['rail_score'];
+  evaluation: EvalResult;
+  /** Whether the content was regenerated to meet thresholds */
+  wasRegenerated: boolean;
+  /** The original pre-regeneration content (undefined if not regenerated) */
+  originalContent?: string;
+  usage: {
+    input_tokens: number;
+    output_tokens: number;
+    total_tokens: number;
+  };
 }
 
 /**
@@ -31,13 +47,12 @@ export class RAILAnthropic {
     this.config = config || {};
   }
 
-  async message(params: any): Promise<{
-    response: any;
-    content: string;
-    railScore: EvalResult['rail_score'];
-    evaluation: EvalResult;
-  }> {
-    const response = await this.anthropic.messages.create(params);
+  async message(
+    params: any & { system?: string; railMode?: EvaluationMode; railSkip?: boolean }
+  ): Promise<RAILAnthropicResponse> {
+    const { railMode, railSkip, ...anthropicParams } = params;
+
+    const response = await this.anthropic.messages.create(anthropicParams);
 
     let content = '';
     if (response.content && Array.isArray(response.content)) {
@@ -47,17 +62,36 @@ export class RAILAnthropic {
         .join('');
     }
 
-    if (!content) {
+    const inputTokens = response.usage?.input_tokens ?? 0;
+    const outputTokens = response.usage?.output_tokens ?? 0;
+    const usage = {
+      input_tokens: inputTokens,
+      output_tokens: outputTokens,
+      total_tokens: inputTokens + outputTokens,
+    };
+
+    if (railSkip || !content) {
       const emptyEval: EvalResult = {
         rail_score: { score: 0, confidence: 0, summary: '' },
         explanation: '',
         dimension_scores: {},
         from_cache: false,
       };
-      return { response, content: '', railScore: emptyEval.rail_score, evaluation: emptyEval };
+      return {
+        response,
+        content: content || '',
+        railScore: emptyEval.rail_score,
+        evaluation: emptyEval,
+        wasRegenerated: false,
+        originalContent: undefined,
+        usage,
+      };
     }
 
-    const evaluation = await this.client.eval({ content });
+    const evaluation = await this.client.eval({
+      content,
+      ...(railMode && { mode: railMode }),
+    });
 
     if (this.config.thresholds) {
       const failed: string[] = [];
@@ -77,6 +111,14 @@ export class RAILAnthropic {
       }
     }
 
-    return { response, content, railScore: evaluation.rail_score, evaluation };
+    return {
+      response,
+      content,
+      railScore: evaluation.rail_score,
+      evaluation,
+      wasRegenerated: false,
+      originalContent: undefined,
+      usage,
+    };
   }
 }

@@ -5,6 +5,59 @@ All notable changes to the RAIL Score JavaScript/TypeScript SDK will be document
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.0] - 2026-03-21
+
+### Added
+
+#### Telemetry Module (new `src/telemetry/`)
+- New `RAILTelemetry` class — optional OpenTelemetry integration with graceful degradation when OTEL packages are not installed. Supports `console`, `otlp`, and `none` exporters. Configurable service name, org/project/environment attributes, and OTLP endpoint with headers.
+- New `RAILInstrumentor` class — monkey-patches a `RailScore` client's `request()` method to automatically wrap every API call in an OTEL span and record `rail.requests`, `rail.request.duration`, `rail.errors`, and `rail.score.distribution` metrics.
+- New `ComplianceLogger` class — logs compliance results at the appropriate severity level (INFO/WARN/ERROR based on issue severity) with optional OTEL span recording.
+- New `IncidentLogger` class — creates and logs structured incident JSON records with optional OTEL span recording.
+- New `HumanReviewQueue` class — maintains an in-memory queue of content items flagged for human review when dimension scores fall below a configurable threshold. Supports `checkAndEnqueue()`, `pending()`, `drain()`, `size()`, and `sizeByDimension()`.
+- New `TelemetryConstants` namespace — semantic attribute name constants for spans/events and metric names, matching the Python SDK constant definitions.
+- `ReviewItem` interface — structured record for items in the human review queue.
+- `TelemetryConfig` interface — configuration type for `RAILTelemetry`.
+
+#### Client (`src/client.ts`)
+- Request-level in-memory caching with a 5-minute TTL, enabled via `config.cache: true`. Cache applies to `/railscore/v1/eval` and `/health` endpoints. Cache key is built from the endpoint path and sorted JSON body for stability.
+- Automatic retry with exponential backoff (1 s → 2 s → 4 s → 8 s, up to 3 retries) on HTTP 429/500/502/503 responses, enabled via `config.retry: true`.
+
+#### Session (`src/session.ts`)
+- New `evaluateInput(content, dimensions?)` method — evaluates input content without recording it in session history. Use for quick safety checks of user input before adding a turn.
+- New `scoresSummary()` method — returns a `ScoresSummary` with `turns`, `averageScore`, `lowestScore`, `belowThresholdCount`, and `regenerationCount`.
+
+#### Middleware (`src/middleware.ts`)
+- `preHook` — optional async hook called before the wrapped function executes, receives the raw input string.
+- `postHook` — optional async hook called after output evaluation, receives the output string and `EvalResult`.
+- `upgradeOnLowConfidence` — when set to `true`, automatically re-evaluates output with `mode: 'deep'` if the initial eval's confidence falls below `lowConfidenceThreshold` (default: 0.6).
+
+#### Providers
+- **All providers** (`RAILOpenAI`, `RAILAnthropic`, `RAILGemini`): support per-call `railMode` override to use a specific eval mode for that call only, and `railSkip` flag to bypass RAIL evaluation entirely.
+- **All providers**: richer response type with `wasRegenerated` (boolean), `originalContent` (string | undefined), and `usage` (token counts). These fields are pre-wired for future auto-regeneration support.
+- `RAILOpenAI.chat()` — extracts `usage` from `response.usage` as `{ prompt_tokens, completion_tokens, total_tokens }`.
+- `RAILAnthropic.message()` — supports `system` parameter pass-through; extracts `usage` as `{ input_tokens, output_tokens, total_tokens }`.
+- `RAILGemini.generate()` — extracts token counts from `usageMetadata`; `RAILGeminiConfig` gains `useVertexAI` metadata flag.
+
+#### Observability (`src/observability/langfuse.ts`)
+- New `evaluateAndLog(content, traceId, options?)` method — combines `eval()` + `scoreTrace()` into a single call.
+- Enhanced `scoreTrace()` — now accepts optional `observationId`, `sessionId`, `comment`, and `thresholdMet` parameters. Emits `rail_confidence` and `rail_threshold_met` scores in addition to the existing `rail_score` and per-dimension scores.
+
+#### Types (`src/types.ts`)
+- `RailScoreConfig.cache` — enable request-level caching (boolean, default false).
+- `RailScoreConfig.retry` — enable exponential backoff retry (boolean, default false).
+- `ScoresSummary` interface — summary of RAIL scores across session turns.
+- `MiddlewareConfig.preHook` — async hook called before the wrapped function.
+- `MiddlewareConfig.postHook` — async hook called after output evaluation.
+- `MiddlewareConfig.upgradeOnLowConfidence` — auto-upgrade to deep eval mode flag.
+- `MiddlewareConfig.lowConfidenceThreshold` — confidence threshold for mode upgrade.
+
+### Changed
+- `SDK_VERSION` bumped to `2.3.0` (affects `User-Agent` header).
+- `RAILOpenAI.chat()`, `RAILAnthropic.message()`, and `RAILGemini.generate()` now return their respective richer response types (`RAILOpenAIResponse`, `RAILAnthropicResponse`, `RAILGeminiResponse`) instead of the previous inline object type. Existing field names (`response`, `content`, `railScore`, `evaluation`) are unchanged.
+
+---
+
 ## [2.1.1] - 2026-02-25
 
 ### Added

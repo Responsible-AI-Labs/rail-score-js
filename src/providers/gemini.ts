@@ -1,9 +1,31 @@
 import type { RailScore } from '../client';
-import type { EvalResult } from '../types';
+import type { EvalResult, EvaluationMode } from '../types';
 import { RAILBlockedError } from '../errors';
 
 export interface RAILGeminiConfig {
   thresholds?: Record<string, number>;
+  /**
+   * Set to true when using a Vertex AI Gemini client instead of the standard
+   * @google/generative-ai SDK. This is metadata only — instantiate the Vertex AI
+   * client yourself and pass it as `modelInstance`.
+   */
+  useVertexAI?: boolean;
+}
+
+export interface RAILGeminiResponse {
+  response: any;
+  content: string;
+  railScore: EvalResult['rail_score'];
+  evaluation: EvalResult;
+  /** Whether the content was regenerated to meet thresholds */
+  wasRegenerated: boolean;
+  /** The original pre-regeneration content (undefined if not regenerated) */
+  originalContent?: string;
+  usage: {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+  };
 }
 
 /**
@@ -27,13 +49,12 @@ export class RAILGemini {
     this.config = config || {};
   }
 
-  async generate(params: any): Promise<{
-    response: any;
-    content: string;
-    railScore: EvalResult['rail_score'];
-    evaluation: EvalResult;
-  }> {
-    const response = await this.model.generateContent(params);
+  async generate(
+    params: any & { railMode?: EvaluationMode; railSkip?: boolean }
+  ): Promise<RAILGeminiResponse> {
+    const { railMode, railSkip, ...geminiParams } = params;
+
+    const response = await this.model.generateContent(geminiParams);
 
     let content = '';
     try {
@@ -43,17 +64,43 @@ export class RAILGemini {
       content = '';
     }
 
-    if (!content) {
+    // Gemini token counts live on the response object
+    const promptTokens =
+      response.response?.usageMetadata?.promptTokenCount ??
+      response.usageMetadata?.promptTokenCount ??
+      0;
+    const completionTokens =
+      response.response?.usageMetadata?.candidatesTokenCount ??
+      response.usageMetadata?.candidatesTokenCount ??
+      0;
+    const usage = {
+      prompt_tokens: promptTokens,
+      completion_tokens: completionTokens,
+      total_tokens: promptTokens + completionTokens,
+    };
+
+    if (railSkip || !content) {
       const emptyEval: EvalResult = {
         rail_score: { score: 0, confidence: 0, summary: '' },
         explanation: '',
         dimension_scores: {},
         from_cache: false,
       };
-      return { response, content: '', railScore: emptyEval.rail_score, evaluation: emptyEval };
+      return {
+        response,
+        content: content || '',
+        railScore: emptyEval.rail_score,
+        evaluation: emptyEval,
+        wasRegenerated: false,
+        originalContent: undefined,
+        usage,
+      };
     }
 
-    const evaluation = await this.client.eval({ content });
+    const evaluation = await this.client.eval({
+      content,
+      ...(railMode && { mode: railMode }),
+    });
 
     if (this.config.thresholds) {
       const failed: string[] = [];
@@ -73,6 +120,14 @@ export class RAILGemini {
       }
     }
 
-    return { response, content, railScore: evaluation.rail_score, evaluation };
+    return {
+      response,
+      content,
+      railScore: evaluation.rail_score,
+      evaluation,
+      wasRegenerated: false,
+      originalContent: undefined,
+      usage,
+    };
   }
 }
