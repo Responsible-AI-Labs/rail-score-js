@@ -19,6 +19,7 @@ Official JavaScript/TypeScript SDK for the [RAIL Score API](https://responsiblea
 - **Policy Engine** — Configurable content enforcement (log, block, regenerate, custom)
 - **Middleware** — Wrap any async function with pre/post RAIL evaluation and hooks
 - **Session Tracking** — Multi-turn conversation quality monitoring
+- **Agent Evaluation** *(v2.4.0)* — Pre/post tool-call risk assessment, prompt injection detection, plan evaluation, tool risk registry, stateful agent sessions, and agent policy enforcement
 
 ## Installation
 
@@ -199,6 +200,362 @@ const health = await client.health();
 console.log(health.status);   // "healthy"
 console.log(health.service);  // "rail-score-engine"
 ```
+
+---
+
+## Agent Evaluation (v2.4.0)
+
+Wrap agentic AI tool calls with RAIL risk assessment at every stage of execution. All agent methods are accessed via `client.agent.*`.
+
+### Evaluate a Tool Call (before execution)
+
+`POST /railscore/v1/agent/tool-call`
+
+```typescript
+import { RailScore, AgentBlockedError } from '@responsible-ai-labs/rail-score';
+
+const client = new RailScore({ apiKey: process.env.RAIL_API_KEY! });
+
+const decision = await client.agent.evaluateToolCall({
+  toolName: 'credit_scoring_api',
+  toolParams: { zipCode: '90210', loanAmount: 50000 },
+  domain: 'finance',
+  mode: 'basic',
+  agentContext: {
+    goal: 'Assess loan eligibility',
+    agentId: 'loan-agent-1',
+    stepIndex: 2,
+    rationale: 'Need credit score before approval',
+    priorToolCalls: ['web_search', 'get_applicant_profile'],
+  },
+  complianceFrameworks: ['eu_ai_act', 'gdpr'],
+  customThresholds: { blockBelow: 5.0, flagBelow: 7.0 },
+});
+
+console.log(decision.decision);           // "ALLOW" | "FLAG" | "BLOCK"
+console.log(decision.decisionReason);     // human-readable explanation
+console.log(decision.railScore.score);    // 0–10
+console.log(decision.contextSignals.proxyVariablesDetected); // ["zip_code"]
+console.log(decision.suggestedParams);    // revised params if available
+
+if (decision.decision !== 'BLOCK') {
+  await callCreditApi(decision.suggestedParams ?? decision.toolParams);
+}
+```
+
+> **Note:** The API returns HTTP 403 for BLOCK decisions. The SDK intercepts this and returns it as a normal `AgentDecision` with `decision === "BLOCK"` — no exception is thrown.
+
+---
+
+### Evaluate a Tool Result (after execution)
+
+`POST /railscore/v1/agent/tool-result`
+
+```typescript
+const evaluation = await client.agent.evaluateToolResult({
+  toolName: 'database_query',
+  toolResult: {
+    data: { rows: [{ name: 'Jane Doe', ssn: '123-45-6789', balance: 42000 }] },
+    format: 'json',
+  },
+  checks: ['pii', 'prompt_injection', 'rail_score'],
+  agentContext: { goal: 'Generate customer report' },
+});
+
+console.log(evaluation.riskLevel);            // "low" | "medium" | "high" | "critical"
+console.log(evaluation.recommendedAction);    // "PASS" | "FLAG" | "REDACT_AND_PASS" | "REDACT_AND_FLAG" | "BLOCK"
+console.log(evaluation.piiDetected.found);    // true
+console.log(evaluation.piiDetected.entities); // [{ type: "SSN", value: "123-45-6789", shouldRedact: true }]
+
+if (evaluation.redactedAvailable) {
+  // use the pre-redacted version instead of raw output
+  const safeOutput = evaluation.piiDetected.redactedResult;
+}
+```
+
+---
+
+### Check for Prompt Injection
+
+`POST /railscore/v1/agent/prompt-injection` — 0.5 credits per call
+
+```typescript
+const check = await client.agent.checkInjection({
+  content: userProvidedInput,
+  contentSource: 'user_input',   // 'user_input' | 'web_search_result' | 'api_response' | 'tool_output'
+});
+
+console.log(check.injectionDetected);    // true | false
+console.log(check.confidence);           // 0.0–1.0
+console.log(check.attackType);           // "direct_instruction_override" | "role_hijack" | "jailbreak" | ...
+console.log(check.severity);             // "none" | "low" | "medium" | "high" | "critical"
+console.log(check.recommendedAction);    // "PASS" | "FLAG" | "BLOCK"
+
+if (check.injectionDetected) {
+  throw new Error(`Injection detected (${check.attackType}): ${check.payloadPreview}`);
+}
+```
+
+---
+
+### Evaluate a Plan (pre-flight, all steps)
+
+Client-side orchestration — calls the tool-call endpoint once per step with a reduced-cost batch header, then computes the overall verdict locally.
+
+```typescript
+import { PlanBlockedError } from '@responsible-ai-labs/rail-score';
+
+const evaluation = await client.agent.evaluatePlan({
+  plan: [
+    {
+      stepIndex: 0,
+      toolName: 'web_search',
+      toolParams: { query: 'current mortgage rates' },
+      rationale: 'Gather rate data before recommendation',
+    },
+    {
+      stepIndex: 1,
+      toolName: 'send_email',
+      toolParams: { to: 'user@example.com', body: '...' },
+      rationale: 'Send personalised rate summary',
+    },
+  ],
+  goal: 'Send daily mortgage rate summary to premium users',
+  agentId: 'rate-advisor',
+  domain: 'finance',
+  complianceFrameworks: ['eu_ai_act'],
+});
+
+console.log(evaluation.overallDecision);  // "ALLOW_ALL" | "PARTIAL_BLOCK" | "BLOCK_ALL"
+console.log(evaluation.overallRisk);      // "low" | "medium" | "high" | "critical"
+console.log(evaluation.planSummary);      // "1 of 2 steps can proceed. Blocked steps: [1]."
+
+for (const step of evaluation.stepResults) {
+  if (step.decision === 'ALLOW') {
+    await executeStep(step);
+  }
+}
+```
+
+Maximum 20 steps per plan — a `ValidationError` is raised client-side if exceeded.
+
+---
+
+### Tool Risk Registry
+
+Manage custom tool risk profiles that override system defaults across all evaluations in your organisation.
+
+```typescript
+// List registered tools
+const { tools, pagination } = await client.agent.registry.listTools({
+  source: 'org_custom',
+  riskLevel: 'high',
+  limit: 20,
+});
+
+// Register a custom profile
+const profile = await client.agent.registry.registerTool({
+  toolName: 'credit_scoring_api',
+  riskLevel: 'high',
+  evaluationDepth: 'deep',
+  thresholds: { blockBelow: 6.0, flagBelow: 8.0, dimensionMinimums: { fairness: 7.0, privacy: 7.0 } },
+  complianceFrameworks: ['eu_ai_act', 'gdpr'],
+  proxyVariableWatch: ['zip_code', 'neighborhood', 'school_district'],
+  piiFieldsWatch: ['ssn', 'dob', 'full_name'],
+  description: 'Third-party credit scoring API',
+});
+
+// Delete a profile (falls back to system default)
+const deleted = await client.agent.registry.deleteTool('credit_scoring_api');
+console.log(deleted.fallback);  // "generic"
+```
+
+---
+
+### AgentSession — Stateful Multi-Call Tracking
+
+`AgentSession` is a pure client-side object. It wraps the agent evaluation methods, accumulates results locally, runs cross-call pattern detection, and optionally enforces a policy on every call.
+
+```typescript
+import { AgentSession } from '@responsible-ai-labs/rail-score';
+
+const session = new AgentSession(
+  client.agent,
+  'loan-agent-1',              // agentId
+  ['eu_ai_act', 'gdpr'],       // complianceFrameworks applied to all calls
+  {
+    deepEveryN: 5,             // use deep mode every 5 calls
+    escalateAfterFlags: 3,     // switch to deep mode after 3 consecutive flags
+    autoBlockAfterCritical: true,
+    maxToolCalls: 100,
+    sessionTtlMinutes: 720,    // 12 hours
+    trackToolResults: true,
+  }
+);
+
+// Evaluate tool calls
+const decision = await session.evaluateToolCall({
+  toolName: 'web_search',
+  toolParams: { query: 'applicant credit history' },
+});
+
+// Evaluate tool results
+const resultEval = await session.evaluateToolResult({
+  toolName: 'web_search',
+  toolResult: { raw: 'Search results...', format: 'text' },
+});
+
+// Check injection
+const injectionCheck = await session.checkInjection({
+  content: webSearchResult,
+  contentSource: 'web_search_result',
+});
+
+// Get accumulated risk summary (no API call)
+const summary = session.riskSummary();
+console.log(summary.totalToolCalls);        // 7
+console.log(summary.allowed);               // 5
+console.log(summary.flagged);               // 1
+console.log(summary.blocked);               // 1
+console.log(summary.currentRiskScore);      // 6.2
+console.log(summary.riskTrend);             // "stable" | "improving" | "escalating" | "critical"
+console.log(summary.patternsDetected);      // [{ pattern: "repeated_pii_access", severity: "high" }]
+console.log(summary.dimensionAverages);     // { fairness: 5.1, safety: 8.3, privacy: 4.7, ... }
+console.log(summary.complianceExposure);    // { gdpr: { violations: 2, warnings: 1, riskTier: "high" } }
+
+// Close and get final summary
+const final = session.close();
+```
+
+**Patterns detected automatically:**
+
+| Pattern | Triggers when |
+|---------|--------------|
+| `repeated_pii_access` | PII detected in ≥ 3 tool calls |
+| `escalating_risk_scores` | RAIL score drops in 3+ consecutive calls |
+| `blocked_retry` | Same tool is blocked and called again |
+| `compliance_accumulation` | > 3 distinct compliance violations across the session |
+| `dimension_degradation` | Average score for any dimension drops ≥ 2.0 points |
+
+---
+
+### AgentPolicyEngine — Local Threshold Enforcement
+
+Applies threshold rules on top of the engine's ALLOW/FLAG/BLOCK signal.
+
+```typescript
+import { AgentPolicyEngine, AgentBlockedError } from '@responsible-ai-labs/rail-score';
+
+const policy = new AgentPolicyEngine({
+  mode: 'block',          // 'block' | 'suggest_fix' | 'log_only' | 'auto_fix'
+  defaultThresholds: {
+    blockBelow: 3.0,
+    flagBelow: 6.0,
+    dimensionMinimums: { fairness: 5.0, privacy: 5.0 },
+  },
+  perToolThresholds: {
+    credit_scoring_api: { blockBelow: 8.0, flagBelow: 9.0 },
+  },
+  onBlock: (result) => console.warn('Blocked:', result.reason),
+  onFlag:  (result) => console.log('Flagged:', result.reason),
+});
+
+const decision = await client.agent.evaluateToolCall({
+  toolName: 'credit_scoring_api',
+  toolParams: params,
+});
+
+try {
+  const policyResult = policy.check(decision, 'credit_scoring_api');
+  console.log(policyResult.blocked);            // false
+  console.log(policyResult.flagged);            // true
+  console.log(policyResult.violatedDimensions); // ["fairness"]
+} catch (e) {
+  if (e instanceof AgentBlockedError) {
+    console.log(e.railScore);             // score that caused the block
+    console.log(e.decisionReason);        // explanation
+    console.log(e.violatedDimensions);    // dimensions below minimum
+    console.log(e.suggestedParams);       // revised params if available
+    console.log(e.complianceViolations);  // violation objects
+    console.log(e.eventId);              // audit reference
+
+    // Optionally retry with suggested params
+    if (e.suggestedParams) {
+      const retry = await client.agent.evaluateToolCall({
+        toolName: 'credit_scoring_api',
+        toolParams: e.suggestedParams,
+      });
+    }
+  }
+}
+```
+
+| Mode | Behaviour on block |
+|------|--------------------|
+| `"block"` | Throws `AgentBlockedError` |
+| `"suggest_fix"` | Returns result with `suggestedParams`, does not throw |
+| `"log_only"` | Calls `onBlock` callback, returns result, does not throw |
+| `"auto_fix"` | Swaps in `suggestedParams` automatically, does not throw |
+
+---
+
+### AgentMiddleware — Automatic Tool Wrapping
+
+`guard()` wraps any tool function with automatic pre-call evaluation and optional post-call result scanning.
+
+```typescript
+import { AgentMiddleware, AgentBlockedError } from '@responsible-ai-labs/rail-score';
+
+const middleware = new AgentMiddleware(client.agent, {
+  policy: 'block',
+  defaultDomain: 'finance',
+  complianceFrameworks: ['eu_ai_act'],
+  defaultThresholds: { blockBelow: 5.0, flagBelow: 7.0 },
+});
+
+// Wrap the tool function — returns an identical-signature async function
+const guardedCreditApi = middleware.guard(
+  'credit_scoring_api',
+  callCreditApi,
+  {
+    domain: 'finance',
+    checkResult: true,                              // scan output for PII / injection
+    resultChecks: ['pii', 'prompt_injection'],
+  }
+);
+
+try {
+  const result = await guardedCreditApi({
+    applicantId: 'u-1234',
+    zipCode: '90210',
+    loanAmount: 50000,
+  });
+  console.log(result);
+} catch (e) {
+  if (e instanceof AgentBlockedError && e.suggestedParams) {
+    // Retry with the API's suggested safer parameters
+    const result = await guardedCreditApi(e.suggestedParams);
+  }
+}
+```
+
+---
+
+### Agent Error Classes
+
+```typescript
+import {
+  AgentBlockedError,   // thrown by AgentPolicyEngine in 'block' mode
+  PlanBlockedError,    // thrown when evaluatePlan() returns BLOCK_ALL (optional)
+  SessionClosedError,  // thrown when calling methods on a closed AgentSession
+} from '@responsible-ai-labs/rail-score';
+```
+
+| Class | When raised |
+|-------|------------|
+| `AgentBlockedError` | `AgentPolicyEngine.check()` in `"block"` mode; has `railScore`, `decisionReason`, `violatedDimensions`, `suggestedParams`, `complianceViolations`, `eventId` |
+| `PlanBlockedError` | Optionally check `evaluation.overallDecision === "BLOCK_ALL"` and throw manually; has `blockedSteps`, `planSummary` |
+| `SessionClosedError` | Any method called on a closed `AgentSession` |
 
 ---
 
@@ -587,6 +944,16 @@ import type {
   SessionConfig, SessionMetrics, ScoresSummary,
   PolicyConfig, MiddlewareConfig,
   TelemetryConfig, ReviewItem,
+  // Agent types (v2.4.0)
+  AgentDomain, AgentContext, AgentThresholds,
+  EvaluateToolCallParams, AgentDecision,
+  EvaluateToolResultParams, ToolResultEvaluation, PiiEntity,
+  CheckInjectionParams, InjectionCheckResult,
+  EvaluatePlanParams, PlanStep, PlanStepResult, PlanEvaluation,
+  ToolRiskProfile, RegisterToolParams, ListToolsParams, ListToolsResponse,
+  AgentSessionConfig, SessionRiskSummary, SessionPattern,
+  AgentPolicyMode, PolicyCheckResult,
+  ComplianceViolation, ContextSignals,
 } from '@responsible-ai-labs/rail-score';
 ```
 
@@ -600,6 +967,36 @@ npm install @anthropic-ai/sdk                            # RAILAnthropic
 npm install @google/generative-ai                        # RAILGemini
 npm install langfuse                                     # RAILLangfuse
 npm install @opentelemetry/api @opentelemetry/sdk-node   # RAILTelemetry
+```
+
+---
+
+## Migration from v2.3.x
+
+All v2.3.x APIs are unchanged. v2.4.0 adds the `agent` namespace as a new property on the existing `RailScore` client — no breaking changes.
+
+```typescript
+// No changes needed to existing code
+const client = new RailScore({ apiKey: '...' });
+
+// New: agent evaluation namespace (v2.4.0)
+const decision = await client.agent.evaluateToolCall({ toolName: 'my_tool', toolParams: {} });
+const resultEval = await client.agent.evaluateToolResult({ toolName: 'my_tool', toolResult: { raw: '...' } });
+const injCheck = await client.agent.checkInjection({ content: userInput });
+const planEval = await client.agent.evaluatePlan({ plan: [...] });
+
+// New: AgentSession for stateful cross-call tracking
+const session = new AgentSession(client.agent, 'my-agent');
+
+// New: AgentPolicyEngine for local threshold enforcement
+const policy = new AgentPolicyEngine({ mode: 'block', defaultThresholds: { blockBelow: 3.0 } });
+
+// New: AgentMiddleware for automatic tool wrapping
+const middleware = new AgentMiddleware(client.agent, { policy: 'block' });
+const guarded = middleware.guard('my_tool', myToolFn);
+
+// New error classes
+// AgentBlockedError, PlanBlockedError, SessionClosedError
 ```
 
 ---
