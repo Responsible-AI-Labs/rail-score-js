@@ -1,5 +1,5 @@
 /**
- * RAIL Score JavaScript/TypeScript SDK v2.3.0
+ * RAIL Score JavaScript/TypeScript SDK v2.4.0
  *
  * Official SDK for the RAIL Score API - Evaluate and generate responsible AI content
  *
@@ -13,6 +13,38 @@ export { RailScore } from './client';
 export { RAILSession } from './session';
 export { PolicyEngine } from './policy';
 export { RAILMiddleware } from './middleware';
+
+// Agent evaluation namespace and primitives
+export { AgentNamespace, AgentSession, AgentPolicyEngine, AgentMiddleware } from './agent';
+export type {
+  AgentDomain,
+  AgentContext,
+  AgentThresholds,
+  ComplianceViolation,
+  PolicyInfo,
+  ContextSignals,
+  EvaluateToolCallParams,
+  AgentDecision,
+  EvaluateToolResultParams,
+  PiiEntity,
+  ToolResultEvaluation,
+  CheckInjectionParams,
+  InjectionCheckResult,
+  PlanStep,
+  EvaluatePlanParams,
+  PlanStepResult,
+  PlanEvaluation,
+  ToolRiskProfile,
+  RegisterToolParams,
+  ListToolsParams,
+  ListToolsResponse,
+  DeleteToolResponse,
+  AgentSessionConfig,
+  SessionPattern,
+  SessionRiskSummary,
+  AgentPolicyMode,
+  PolicyCheckResult,
+} from './agent';
 
 // LLM provider wrappers
 export { RAILOpenAI } from './providers/openai';
@@ -95,6 +127,9 @@ export {
   SessionExpiredError,
   NotImplementedByServerError,
   RAILBlockedError,
+  AgentBlockedError,
+  PlanBlockedError,
+  SessionClosedError,
 } from './errors';
 
 // Utilities

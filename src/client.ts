@@ -30,10 +30,12 @@ import {
   ServerError,
 } from './errors';
 import { resolveFrameworkAlias, validateWeightsSum100 } from './utils';
+import { AgentNamespace } from './agent';
 
 const DEFAULT_TIMEOUT = 30000;
 const SAFE_REGENERATE_TIMEOUT = 120000;
-const SDK_VERSION = '2.3.0';
+const SDK_VERSION = '2.4.0';
+const AGENT_TOOL_CALL_ENDPOINT = '/railscore/v1/agent/tool-call';
 
 const RETRY_STATUSES = [429, 500, 502, 503];
 const RETRY_DELAYS_MS = [1000, 2000, 4000, 8000];
@@ -63,6 +65,24 @@ export class RailScore {
   private readonly retryEnabled: boolean;
   private readonly cache = new Map<string, CacheEntry<unknown>>();
 
+  /**
+   * Agent evaluation namespace.
+   *
+   * Provides pre-call tool evaluation, post-call result scanning, prompt
+   * injection detection, plan evaluation, and tool risk registry management.
+   *
+   * @example
+   * ```typescript
+   * const decision = await client.agent.evaluateToolCall({
+   *   toolName: 'credit_scoring_api',
+   *   toolParams: { zipCode: '90210', loanAmount: 50000 },
+   *   domain: 'finance',
+   *   complianceFrameworks: ['eu_ai_act', 'gdpr'],
+   * });
+   * ```
+   */
+  readonly agent: AgentNamespace;
+
   constructor(config: RailScoreConfig) {
     if (!config.apiKey) {
       throw new ValidationError('API key is required');
@@ -73,6 +93,7 @@ export class RailScore {
     this.timeout = config.timeout || DEFAULT_TIMEOUT;
     this.cacheEnabled = config.cache ?? false;
     this.retryEnabled = config.retry ?? false;
+    this.agent = new AgentNamespace(this);
   }
 
   private buildCacheKey(endpoint: string, options: RequestInit): string {
@@ -469,6 +490,84 @@ export class RailScore {
     }
 
     // Should not reach here, but satisfy TypeScript
+    if (lastError) {
+      throw new NetworkError(`Network request failed: ${lastError.message}`, lastError);
+    }
+    throw new NetworkError('Request failed after retries', undefined);
+  }
+
+  /**
+   * Make an authenticated HTTP request to the agent/tool-call endpoint.
+   *
+   * Identical to `request()` but intercepts HTTP 403 and returns the response
+   * body as a BLOCK decision rather than throwing an AuthenticationError.
+   * Any other 403 from other endpoints is still treated as an auth error.
+   *
+   * @internal
+   */
+  async requestAgentToolCall<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+    const url = `${this.baseUrl}${endpoint}`;
+    const effectiveTimeout = this.timeout;
+
+    const maxAttempts = this.retryEnabled ? 4 : 1;
+    let lastError: any = null;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      if (attempt > 0) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, RETRY_DELAYS_MS[attempt - 1])
+        );
+      }
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), effectiveTimeout);
+
+      try {
+        const response = await fetch(url, {
+          ...options,
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${this.apiKey}`,
+            'User-Agent': `rail-score-js/${SDK_VERSION}`,
+            ...options.headers,
+          },
+          signal: controller.signal,
+        });
+
+        clearTimeout(timeoutId);
+
+        // HTTP 403 on the agent tool-call endpoint = BLOCK decision, not auth error.
+        // Parse and return the body as normal; the decision field will be "BLOCK".
+        if (response.status === 403 && endpoint === AGENT_TOOL_CALL_ENDPOINT) {
+          return (await response.json()) as T;
+        }
+
+        if (
+          RETRY_STATUSES.includes(response.status) &&
+          attempt < maxAttempts - 1
+        ) {
+          continue;
+        }
+
+        if (!response.ok) {
+          await this.handleError(response);
+        }
+
+        return (await response.json()) as T;
+      } catch (error: any) {
+        clearTimeout(timeoutId);
+        if (error instanceof RailScoreError) throw error;
+        if (error.name === 'AbortError') {
+          throw new TimeoutError(`Request timeout after ${effectiveTimeout}ms`);
+        }
+        lastError = error;
+        if (attempt < maxAttempts - 1) {
+          continue;
+        }
+        throw new NetworkError(`Network request failed: ${error.message}`, error);
+      }
+    }
+
     if (lastError) {
       throw new NetworkError(`Network request failed: ${lastError.message}`, lastError);
     }
