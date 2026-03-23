@@ -218,3 +218,69 @@ export class RAILBlockedError extends RailScoreError {
     this.scores = scores;
   }
 }
+
+/**
+ * Raised by AgentPolicyEngine when mode is "block" and the tool call is blocked
+ */
+export class AgentBlockedError extends RailScoreError {
+  /** Why the call was blocked */
+  decisionReason: string;
+  /** RAIL score that caused the block */
+  railScore: number;
+  /** Dimensions that fell below their configured minimums */
+  violatedDimensions: string[];
+  /** Revised parameters that would pass (if available) */
+  suggestedParams: Record<string, any> | null;
+  /** Compliance violations that contributed to the block */
+  complianceViolations: any[];
+  /** Audit reference ID */
+  eventId: string;
+
+  constructor(
+    decisionReason: string,
+    railScore: number,
+    violatedDimensions: string[],
+    suggestedParams: Record<string, any> | null,
+    complianceViolations: any[],
+    eventId: string
+  ) {
+    super(`Agent tool call blocked: ${decisionReason}`);
+    this.name = 'AgentBlockedError';
+    this.decisionReason = decisionReason;
+    this.railScore = railScore;
+    this.violatedDimensions = violatedDimensions;
+    this.suggestedParams = suggestedParams;
+    this.complianceViolations = complianceViolations;
+    this.eventId = eventId;
+  }
+}
+
+/**
+ * Raised when evaluate_plan() returns BLOCK_ALL and the caller opts into exceptions
+ */
+export class PlanBlockedError extends RailScoreError {
+  /** Always "BLOCK_ALL" */
+  overallDecision: string;
+  /** Indices of the blocked steps */
+  blockedSteps: number[];
+  /** Human-readable plan summary */
+  planSummary: string;
+
+  constructor(blockedSteps: number[], planSummary: string) {
+    super(`Plan blocked: ${planSummary}`);
+    this.name = 'PlanBlockedError';
+    this.overallDecision = 'BLOCK_ALL';
+    this.blockedSteps = blockedSteps;
+    this.planSummary = planSummary;
+  }
+}
+
+/**
+ * Raised when any method is called on a closed AgentSession
+ */
+export class SessionClosedError extends RailScoreError {
+  constructor(message: string = 'AgentSession has been closed') {
+    super(message);
+    this.name = 'SessionClosedError';
+  }
+}
