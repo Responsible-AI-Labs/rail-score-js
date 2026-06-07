@@ -1,5 +1,7 @@
 name: Publish to npm
 
+# Publishes to npm when a GitHub Release is published.
+# Merging a PR does NOT publish — cut a Release (tag, e.g. v2.6.0) to trigger this.
 on:
   release:
     types: [published]
@@ -9,27 +11,28 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    
+      id-token: write   # required for npm provenance attestations
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '20'
           registry-url: 'https://registry.npmjs.org'
-      
+
       - name: Install dependencies
         run: npm ci
-      
+
       - name: Run tests
         run: npm test
-      
+
       - name: Build
         run: npm run build
-      
+
       - name: Publish to npm
-        run: npm publish --access public
+        run: npm publish --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

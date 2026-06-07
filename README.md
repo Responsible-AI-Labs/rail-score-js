@@ -1112,6 +1112,14 @@ import type {
   AgentSessionConfig, SessionRiskSummary, SessionPattern,
   AgentPolicyMode, PolicyCheckResult,
   ComplianceViolation, ContextSignals,
+  // Introspection types (v2.6.0)
+  ApplicationConfig, ApplicationInfo, ApplicationPolicyConfig,
+  EnforcementState, Capabilities, DimensionsInfo,
+  // DPDP types (v2.6.0)
+  DPDPComplianceOptions, DPDPConfigInput,
+  DPDPScanParams, DPDPScanResult, DPDPContentResult,
+  DPDPDecision, DPDPEmitResult, DPDPRequireResult,
+  DPDPEvidenceArtefact, DPDPSession, DPDPTimerList, DPDPAuditResult,
 } from '@responsible-ai-labs/rail-score';
 ```
 
@@ -1128,6 +1136,23 @@ npm install @opentelemetry/api @opentelemetry/sdk-node   # RAILTelemetry
 ```
 
 ---
+
+## Migration from v2.4.0
+
+All v2.4.0 APIs are unchanged. v2.6.0 is additive — no breaking changes:
+
+- New `client.dpdp` namespace and standalone `DPDPCompliance` client for India's DPDP Act.
+- New `DPDPContentScanner` for zero-latency, client-side Indian PII detection.
+- New read-only introspection methods: `client.getConfig()`, `client.getCapabilities()`, `client.getDimensions()` (consume no credits).
+
+```typescript
+// New: DPDP compliance namespace (v2.6.0)
+const scan = await client.dpdp.scan('Aadhaar 2345 6789 0124', { piiAction: 'mask' });
+
+// New: configuration introspection (v2.6.0)
+const cfg = await client.getConfig();
+console.log(cfg.policy.locked, cfg.enforcement.mode);
+```
 
 ## Migration from v2.3.x
 
