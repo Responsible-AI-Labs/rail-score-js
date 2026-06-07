@@ -626,6 +626,35 @@ const [masked] = scanner.applyActions(result, 'Call me at +91 9876543210');
 console.log(masked); // 'Call me at [MOBILE]'
 ```
 
+### Standalone client (`DPDPCompliance`)
+
+If you only need DPDP compliance, use the standalone `DPDPCompliance` client. It
+owns its own API key and base URL and applies a config as defaults for every
+call — no separate `RailScore` instance required.
+
+```typescript
+import { DPDPCompliance } from '@responsible-ai-labs/rail-score';
+
+const dpdp = new DPDPCompliance({
+  apiKey: process.env.RAIL_API_KEY!,
+  config: {
+    entityType: 'data_fiduciary',
+    sector: 'fintech',
+    purpose: 'loan_advisory',
+    piiAction: 'mask',
+  },
+});
+
+// Server-side scan (inherits piiAction/purpose from config)
+const scan = await dpdp.scan('Aadhaar: 2345 6789 0124');
+
+// Zero-latency local scan, no API call
+const local = dpdp.scanLocal('Call me at +91 9876543210');
+
+// createSession inherits purpose/entityType/sector from config
+const session = await dpdp.createSession();
+```
+
 ### Behavioral compliance: sessions, gates, events
 
 ```typescript

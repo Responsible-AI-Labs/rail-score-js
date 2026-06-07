@@ -34,7 +34,7 @@ import {
 } from './errors';
 import { resolveFrameworkAlias, validateWeightsSum100 } from './utils';
 import { AgentNamespace } from './agent';
-import { DPDPNamespace } from './dpdp';
+import { DPDPNamespace } from './dpdp/client';
 
 const DEFAULT_TIMEOUT = 30000;
 const SAFE_REGENERATE_TIMEOUT = 120000;

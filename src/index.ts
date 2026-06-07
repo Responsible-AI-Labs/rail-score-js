@@ -15,8 +15,9 @@ export { PolicyEngine } from './policy';
 export { RAILMiddleware } from './middleware';
 
 // DPDP compliance namespace and primitives
-export { DPDPNamespace, DPDPContentScanner, resolveDpdpConfig } from './dpdp';
+export { DPDPNamespace, DPDPCompliance, DPDPContentScanner, resolveDpdpConfig } from './dpdp';
 export type {
+  DPDPComplianceOptions,
   DPDPConfigInput,
   DPDPConfigResolved,
   DPDPEntityType,

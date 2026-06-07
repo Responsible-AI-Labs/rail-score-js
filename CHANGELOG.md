@@ -24,6 +24,9 @@ Additive release — no breaking changes.
   - `getSession(sessionId)` — retrieve an existing compliance session
   - `listTimers(params)` — list active compliance timers
   - `dpdpAudit(content, params)` — tiered DPDP system audit (throws `DPDPHostedOnlyError` on a 404/501)
+- New `DPDPCompliance` standalone client — a self-contained client with its own API
+  key and base URL that combines the server methods with the local scanner and applies
+  a `DPDPConfigInput` as defaults for every call (`scanLocal()` for zero-latency scans).
 - New `DPDPContentScanner` — client-side, zero-latency regex scanner for Indian PII
   (Aadhaar with Verhoeff checksum, PAN, mobile, UPI, voter ID, passport, driving licence,
   IFSC, bank account, GSTIN) and child signal detection, with mask/block actions.

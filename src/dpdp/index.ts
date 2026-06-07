@@ -1,4 +1,6 @@
 export { DPDPNamespace } from './client';
+export { DPDPCompliance } from './standalone';
+export type { DPDPComplianceOptions } from './standalone';
 export { DPDPContentScanner } from './scanner';
 export { resolveDpdpConfig } from './config';
 

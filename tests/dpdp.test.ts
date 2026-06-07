@@ -1,5 +1,5 @@
 import { RailScore } from '../src/client';
-import { DPDPContentScanner } from '../src/dpdp';
+import { DPDPContentScanner, DPDPCompliance } from '../src/dpdp';
 import { ValidationError, DPDPHostedOnlyError } from '../src/errors';
 import { setMockResponse, resetMock } from './__mocks__/node-fetch';
 
@@ -254,5 +254,59 @@ describe('DPDPContentScanner (local)', () => {
 
   it('throws ValidationError on an invalid config value', () => {
     expect(() => new DPDPContentScanner({ piiAction: 'nope' as any })).toThrow(ValidationError);
+  });
+});
+
+describe('DPDPCompliance (standalone)', () => {
+  beforeEach(() => resetMock());
+  afterEach(() => resetMock());
+
+  it('scans server-side via its own owned client', async () => {
+    setMockResponse({
+      result: { compliant: true, pii_found: [], child_signals: [] },
+      credits_consumed: 0.5,
+    });
+
+    const dpdp = new DPDPCompliance({
+      apiKey: 'test-rail-api-key',
+      config: { purpose: 'loan_advisory', piiAction: 'mask' },
+    });
+
+    const result = await dpdp.scan('Some text');
+    expect(result.compliant).toBe(true);
+    expect(result.creditsConsumed).toBe(0.5);
+  });
+
+  it('runs a zero-latency local scan without any API call', () => {
+    const dpdp = new DPDPCompliance({
+      apiKey: 'test-rail-api-key',
+      config: { piiPatterns: ['mobile_in'], piiAction: 'mask' },
+    });
+
+    const result = dpdp.scanLocal('Call +91 9876543210');
+    expect(result.piiFound.some((p) => p.type === 'mobile_in')).toBe(true);
+  });
+
+  it('uses the configured purpose for createSession (no per-call purpose)', async () => {
+    setMockResponse({ result: { session_id: 'sess_1', created_at: 'x', config: {} } });
+
+    const dpdp = new DPDPCompliance({
+      apiKey: 'test-rail-api-key',
+      config: { purpose: 'credit decisioning', sector: 'fintech' },
+    });
+
+    const session = await dpdp.createSession();
+    expect(session.sessionId).toBe('sess_1');
+  });
+
+  it('throws ValidationError when no purpose is configured or passed', async () => {
+    const dpdp = new DPDPCompliance({ apiKey: 'test-rail-api-key' });
+    await expect(dpdp.createSession()).rejects.toThrow(ValidationError);
+  });
+
+  it('raises DPDPHostedOnlyError from a standalone audit on 404', async () => {
+    setMockResponse({ message: 'not found' }, 404, false);
+    const dpdp = new DPDPCompliance({ apiKey: 'test-rail-api-key' });
+    await expect(dpdp.dpdpAudit('content')).rejects.toThrow(DPDPHostedOnlyError);
   });
 });
