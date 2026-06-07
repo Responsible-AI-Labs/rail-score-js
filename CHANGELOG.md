@@ -5,6 +5,48 @@ All notable changes to the RAIL Score JavaScript/TypeScript SDK will be document
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.0] - 2026-06-07
+
+Brings the JavaScript/TypeScript SDK to parity with the Python SDK v2.6.0:
+the DPDP compliance namespace (v2.5) and configuration introspection (v2.6).
+Additive release — no breaking changes.
+
+### Added
+
+#### DPDP compliance namespace (`client.dpdp`)
+- New `client.dpdp` namespace for India's Digital Personal Data Protection Act, 2023:
+  - `scan(content, params)` — server-side scan for Indian PII, child signals, and purpose drift
+  - `evaluate(action, context, params)` — synchronous allow / block / require_action gate
+  - `emit(events, params)` — record behavioral compliance events (1 or up to 50)
+  - `require(sessionId, workflowStep, context)` — required actions for the current workflow state
+  - `evidence(evidenceType, params)` — generate audit-grade evidence packets (Pro+ tier)
+  - `createSession(params)` — create a compliance session (throws `ValidationError` when `purpose` is empty, DPDP S.4)
+  - `getSession(sessionId)` — retrieve an existing compliance session
+  - `listTimers(params)` — list active compliance timers
+  - `dpdpAudit(content, params)` — tiered DPDP system audit (throws `DPDPHostedOnlyError` on a 404/501)
+- New `DPDPContentScanner` — client-side, zero-latency regex scanner for Indian PII
+  (Aadhaar with Verhoeff checksum, PAN, mobile, UPI, voter ID, passport, driving licence,
+  IFSC, bank account, GSTIN) and child signal detection, with mask/block actions.
+- New `resolveDpdpConfig` helper and `DPDPConfigInput` configuration type.
+- New exceptions: `DPDPError`, `DPDPBlockedError`, `DPDPChildContentBlockedError`,
+  `DPDPPiiBlockedError`, `DPDPConsentRequiredError`, `DPDPTimerExpiredError`,
+  `DPDPSessionNotFoundError`, `DPDPHostedOnlyError`.
+- New result types: `DPDPScanResult`, `DPDPDecision`, `DPDPEmitResult`, `DPDPRequireResult`,
+  `DPDPEvidenceArtefact`, `DPDPSession`, `DPDPTimerList`, `DPDPAuditResult`, `DPDPContentResult`,
+  and their component models.
+
+#### Configuration introspection
+- `client.getConfig()` — the application's bound environment, governance policy
+  (thresholds, weights, enforcement, safe-regenerate, and the `locked` flag), and
+  enforcement state. Returns `ApplicationConfig`. Read-only; no credits.
+- `client.getCapabilities()` — the plan's evaluation modes, compliance frameworks,
+  agent/DPDP features, and request limits. Returns `Capabilities`. Read-only; no credits.
+- `client.getDimensions()` — the RAIL dimensions with this application's
+  weights/thresholds and the score bands. Returns `DimensionsInfo`. Read-only; no credits.
+
+### Changed
+- `SDK_VERSION` bumped to `2.6.0` (User-Agent and `X-RAIL-Client` headers).
+
 ## [2.3.1] - 2026-03-21
 
 ### Changed

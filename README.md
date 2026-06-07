@@ -20,6 +20,8 @@ Official JavaScript/TypeScript SDK for the [RAIL Score API](https://responsiblea
 - **Middleware** — Wrap any async function with pre/post RAIL evaluation and hooks
 - **Session Tracking** — Multi-turn conversation quality monitoring
 - **Agent Evaluation** *(v2.4.0)* — Pre/post tool-call risk assessment, prompt injection detection, plan evaluation, tool risk registry, stateful agent sessions, and agent policy enforcement
+- **DPDP Compliance** *(v2.6.0)* — India DPDP Act namespace: server-side PII/child scanning, behavioral compliance sessions, evidence, timers, tiered audits, plus a zero-latency local scanner
+- **Configuration Introspection** *(v2.6.0)* — Read your application config, plan capabilities, and dimension metadata (`getConfig`, `getCapabilities`, `getDimensions`)
 
 ## Installation
 
@@ -200,6 +202,32 @@ const health = await client.health();
 console.log(health.status);   // "healthy"
 console.log(health.service);  // "rail-score-engine"
 ```
+
+---
+
+### Configuration & Monitoring (v2.6.0)
+
+Read-only introspection of the API key's application configuration, plan
+capabilities, and dimension metadata. These calls consume **no credits**.
+
+```typescript
+// Application config: bound environment, governance policy, enforcement state
+const cfg = await client.getConfig();
+console.log(cfg.application.id, cfg.application.plan);
+console.log(cfg.policy.evalMode, cfg.policy.overallThreshold, cfg.policy.locked);
+console.log(cfg.enforcement.active, cfg.enforcement.mode);
+
+// Plan capabilities: evaluation modes, compliance frameworks, limits
+const caps = await client.getCapabilities();
+console.log(caps.plan, caps.compliance.frameworks, caps.limits);
+
+// The 8 RAIL dimensions with this app's weights/thresholds + score bands
+const dims = await client.getDimensions();
+console.log(dims.dimensions, dims.scoreBands);
+```
+
+> When `cfg.policy.locked` is `true`, the server applies the dashboard policy
+> and ignores any conflicting per-request `mode` / `domain` / `weights`.
 
 ---
 
@@ -556,6 +584,107 @@ import {
 | `AgentBlockedError` | `AgentPolicyEngine.check()` in `"block"` mode; has `railScore`, `decisionReason`, `violatedDimensions`, `suggestedParams`, `complianceViolations`, `eventId` |
 | `PlanBlockedError` | Optionally check `evaluation.overallDecision === "BLOCK_ALL"` and throw manually; has `blockedSteps`, `planSummary` |
 | `SessionClosedError` | Any method called on a closed `AgentSession` |
+
+---
+
+## DPDP Compliance (India) (v2.6.0)
+
+The `client.dpdp` namespace provides compliance tooling for India's **Digital
+Personal Data Protection Act, 2023**: server-side content scanning, an
+event-driven behavioral compliance engine (sessions, gates, evidence, timers),
+and a tiered system audit. A zero-latency local scanner is also available.
+
+### Scan content for Indian PII and child signals
+
+```typescript
+const scan = await client.dpdp.scan('Aadhaar 2345 6789 0124, call +91 9876543210', {
+  piiAction: 'mask',       // 'detect' | 'mask' | 'block' | 'warn' | 'log'
+  childDetection: true,
+  purpose: 'loan onboarding',
+});
+
+console.log(scan.compliant);                       // false
+console.log(scan.piiFound.map((p) => p.type));     // ['aadhaar', 'mobile_in']
+console.log(scan.contentMasked);
+```
+
+### Local (zero-latency) scanning
+
+`DPDPContentScanner` runs entirely client-side with no API call. Aadhaar
+matches are validated with the Verhoeff checksum to suppress false positives.
+
+```typescript
+import { DPDPContentScanner } from '@responsible-ai-labs/rail-score';
+
+const scanner = new DPDPContentScanner({
+  piiPatterns: ['aadhaar', 'pan', 'mobile_in', 'upi'],
+  piiAction: 'mask',
+});
+
+const result = scanner.scanText('Call me at +91 9876543210');
+const [masked] = scanner.applyActions(result, 'Call me at +91 9876543210');
+console.log(masked); // 'Call me at [MOBILE]'
+```
+
+### Behavioral compliance: sessions, gates, events
+
+```typescript
+// A purpose is required (DPDP S.4) — createSession throws ValidationError without it.
+const session = await client.dpdp.createSession({
+  purpose: 'credit decisioning',
+  entityType: 'data_fiduciary',
+  sector: 'fintech',
+});
+
+// Gate an action before performing it.
+const decision = await client.dpdp.evaluate(
+  'process_data',
+  { dataTypes: ['financial'] },
+  { sessionId: session.sessionId }
+);
+if (decision.verdict === 'block') {
+  console.log(decision.violations);
+}
+
+// Record evidence events and inspect compliance timers.
+await client.dpdp.emit({ type: 'consent.granted', data: { principalId: 'u_1' } }, {
+  sessionId: session.sessionId,
+});
+const timers = await client.dpdp.listTimers({ status: 'active', approachingDays: 7 });
+```
+
+### Tiered system audit
+
+```typescript
+import { DPDPHostedOnlyError } from '@responsible-ai-labs/rail-score';
+
+try {
+  const audit = await client.dpdp.dpdpAudit(privacyPolicyText, {
+    entityType: 'data_fiduciary',
+    sector: 'fintech',
+    crossBorderTransfers: true,
+  });
+  console.log(audit.overallScore, audit.overallLabel);
+  console.log(audit.totalPenaltyExposureCrore);
+} catch (err) {
+  if (err instanceof DPDPHostedOnlyError) {
+    // Endpoint unavailable on this backend; point baseUrl at the hosted API.
+  }
+}
+```
+
+### DPDP Error Classes
+
+| Error | Raised when |
+|-------|-------------|
+| `DPDPError` | Base class for all DPDP errors |
+| `DPDPBlockedError` | Content blocked due to a DPDP violation |
+| `DPDPChildContentBlockedError` | Child-targeted content blocked (S.9(3)) |
+| `DPDPPiiBlockedError` | PII detected with `piiAction: 'block'` (S.8(5)) |
+| `DPDPConsentRequiredError` | `evaluate()` requires consent before proceeding |
+| `DPDPTimerExpiredError` | A compliance timer deadline has passed |
+| `DPDPSessionNotFoundError` | Session ID not found or expired |
+| `DPDPHostedOnlyError` | `dpdpAudit()` endpoint unavailable (404/501) |
 
 ---
 

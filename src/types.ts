@@ -506,3 +506,106 @@ export interface MiddlewareConfig {
   /** Confidence threshold that triggers mode upgrade (default: 0.6) */
   lowConfidenceThreshold?: number;
 }
+
+// ─── Configuration Introspection (v2.6.0) ─────────────────────────────────────
+
+/**
+ * The application/environment an API key is bound to.
+ * From GET /railscore/v1/config.
+ */
+export interface ApplicationInfo {
+  /** Application identifier */
+  id: string;
+  /** Environment, e.g. "production" or "development" */
+  environment: string;
+  /** Organization identifier */
+  organization: string;
+  /** Plan name, e.g. "free", "pro" */
+  plan: string;
+}
+
+/**
+ * The governance policy configured for an application in the dashboard.
+ *
+ * When `locked` is true, the server applies these settings and ignores any
+ * conflicting per-request mode/domain/weights.
+ */
+export interface ApplicationPolicyConfig {
+  /** Enforcement strategy, e.g. "log_only", "block", "regenerate" */
+  enforcement: string;
+  /** Evaluation mode, "basic" or "deep" */
+  evalMode: string;
+  /** Overall pass threshold */
+  overallThreshold: number;
+  /** Default content domain */
+  domain: string;
+  /** Per-dimension thresholds */
+  dimensionThresholds: Record<string, any>;
+  /** Per-dimension weights */
+  dimensionWeights: Record<string, any>;
+  /** Compliance frameworks applied by policy */
+  compliance: any[];
+  /** Safe-regenerate configuration */
+  safeRegenerate: Record<string, any>;
+  /** Whether the policy is locked (server-enforced, overrides per-request options) */
+  locked: boolean;
+}
+
+/**
+ * Whether the application's policy is actively shaping responses.
+ */
+export interface EnforcementState {
+  /** Whether enforcement is currently active */
+  active: boolean;
+  /** Enforcement mode, e.g. "monitor" or "enforce" */
+  mode: string;
+}
+
+/**
+ * Current configuration for an API key's application.
+ * From GET /railscore/v1/config. Read-only; consumes no credits.
+ */
+export interface ApplicationConfig {
+  /** The bound application/environment */
+  application: ApplicationInfo;
+  /** The dashboard-configured governance policy */
+  policy: ApplicationPolicyConfig;
+  /** Whether enforcement is currently active */
+  enforcement: EnforcementState;
+  /** The full raw payload, so no field is lost to shape changes */
+  raw: Record<string, any>;
+}
+
+/**
+ * Plan capabilities for an API key.
+ * From GET /railscore/v1/capabilities. Read-only; consumes no credits.
+ */
+export interface Capabilities {
+  /** Plan name */
+  plan: string;
+  /** Evaluation capabilities (modes, max content length, ...) */
+  evaluation: Record<string, any>;
+  /** Compliance capabilities (frameworks, ...) */
+  compliance: Record<string, any>;
+  /** Agent evaluation capabilities */
+  agent: Record<string, any>;
+  /** DPDP compliance capabilities */
+  dpdp: Record<string, any>;
+  /** Request limits */
+  limits: Record<string, any>;
+  /** The full raw payload */
+  raw: Record<string, any>;
+}
+
+/**
+ * RAIL dimension metadata (with this app's weights/thresholds) and score bands.
+ * From GET /railscore/v1/dimensions. Read-only; consumes no credits.
+ */
+export interface DimensionsInfo {
+  /** The RAIL dimensions with weights/thresholds/descriptions */
+  dimensions: Array<Record<string, any>>;
+  /** Score band definitions */
+  scoreBands: Array<Record<string, any>>;
+  /** The full raw payload */
+  raw: Record<string, any>;
+}
