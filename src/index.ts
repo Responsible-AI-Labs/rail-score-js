@@ -1,5 +1,5 @@
 /**
- * RAIL Score JavaScript/TypeScript SDK v2.4.0
+ * RAIL Score JavaScript/TypeScript SDK v2.6.0
  *
  * Official SDK for the RAIL Score API - Evaluate and generate responsible AI content
  *
@@ -13,6 +13,48 @@ export { RailScore } from './client';
 export { RAILSession } from './session';
 export { PolicyEngine } from './policy';
 export { RAILMiddleware } from './middleware';
+
+// DPDP compliance namespace and primitives
+export { DPDPNamespace, DPDPCompliance, DPDPContentScanner, resolveDpdpConfig } from './dpdp';
+export type {
+  DPDPComplianceOptions,
+  DPDPConfigInput,
+  DPDPConfigResolved,
+  DPDPEntityType,
+  DPDPSector,
+  DPDPPiiAction,
+  DPDPChildAction,
+  DPDPDriftAction,
+  DPDPPiiMatch,
+  DPDPChildSignal,
+  DPDPViolation,
+  DPDPContentResult,
+  DPDPScanPiiItem,
+  DPDPScanChildSignal,
+  DPDPScanResult,
+  DPDPSessionState,
+  DPDPSession,
+  DPDPViolationDetail,
+  DPDPCondition,
+  DPDPRequiredAction,
+  DPDPDecision,
+  DPDPEventResult,
+  DPDPEmitResult,
+  DPDPRequireResult,
+  DPDPEvidenceArtefact,
+  DPDPTimer,
+  DPDPTimerSummary,
+  DPDPTimerList,
+  DPDPTieredRequirement,
+  DPDPAuditResult,
+  DPDPScanParams,
+  DPDPEvaluateParams,
+  DPDPEmitParams,
+  DPDPEvent,
+  DPDPCreateSessionParams,
+  DPDPListTimersParams,
+  DPDPAuditParams,
+} from './dpdp';
 
 // Agent evaluation namespace and primitives
 export { AgentNamespace, AgentSession, AgentPolicyEngine, AgentMiddleware } from './agent';
@@ -107,6 +149,12 @@ export type {
   PolicyMode,
   PolicyConfig,
   MiddlewareConfig,
+  ApplicationConfig,
+  ApplicationInfo,
+  ApplicationPolicyConfig,
+  EnforcementState,
+  Capabilities,
+  DimensionsInfo,
 } from './types';
 
 // Errors
@@ -130,6 +178,14 @@ export {
   AgentBlockedError,
   PlanBlockedError,
   SessionClosedError,
+  DPDPError,
+  DPDPBlockedError,
+  DPDPChildContentBlockedError,
+  DPDPPiiBlockedError,
+  DPDPConsentRequiredError,
+  DPDPTimerExpiredError,
+  DPDPSessionNotFoundError,
+  DPDPHostedOnlyError,
 } from './errors';
 
 // Utilities

@@ -1,35 +1,74 @@
-name: Publish to npm
+name: Release and Publish to npm
 
+# Tag-driven auto-release. Push a SemVer tag that matches package.json, e.g.:
+#
+#   npm version 2.6.0 --no-git-tag-version   # if not already bumped
+#   git commit -am "chore: release v2.6.0" && git push
+#   git tag v2.6.0 && git push origin v2.6.0
+#
+# That single tag push runs tests + build, publishes to npm (with provenance),
+# and creates the GitHub Release with auto-generated notes. No manual Release
+# step required.
 on:
-  release:
-    types: [published]
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'        # v2.6.0
+      - 'v[0-9]+.[0-9]+.[0-9]+-*'      # pre-releases, e.g. v2.6.0-rc.1
+
+permissions:
+  contents: write   # create the GitHub Release
+  id-token: write   # npm provenance attestations
 
 jobs:
-  publish:
+  release:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      
+        with:
+          fetch-depth: 0   # full history so release notes can be generated
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '20'
           registry-url: 'https://registry.npmjs.org'
-      
+
+      - name: Verify tag matches package.json version
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          PKG="$(node -p "require('./package.json').version")"
+          echo "tag=$TAG packageVersion=$PKG"
+          if [ "$TAG" != "$PKG" ]; then
+            echo "::error::Tag v$TAG does not match package.json version $PKG. Bump package.json (and package-lock) before tagging."
+            exit 1
+          fi
+
       - name: Install dependencies
         run: npm ci
-      
+
       - name: Run tests
         run: npm test
-      
+
       - name: Build
         run: npm run build
-      
+
       - name: Publish to npm
-        run: npm publish --access public
+        run: npm publish --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PRERELEASE_FLAG=""
+          case "$GITHUB_REF_NAME" in
+            *-*) PRERELEASE_FLAG="--prerelease" ;;
+          esac
+          gh release create "$GITHUB_REF_NAME" \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes \
+            --verify-tag \
+            $PRERELEASE_FLAG

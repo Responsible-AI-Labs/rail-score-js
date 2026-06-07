@@ -284,3 +284,118 @@ export class SessionClosedError extends RailScoreError {
     this.name = 'SessionClosedError';
   }
 }
+
+// ─── DPDP compliance errors (v2.5+) ──────────────────────────────────────────
+
+/**
+ * Base error for the DPDP compliance namespace.
+ */
+export class DPDPError extends RailScoreError {
+  /** Structured details about the error */
+  details: Record<string, any>;
+
+  constructor(message: string, details?: Record<string, any>) {
+    super(message);
+    this.name = 'DPDPError';
+    this.details = details || {};
+  }
+}
+
+/**
+ * Raised when content is blocked due to a DPDP violation.
+ */
+export class DPDPBlockedError extends DPDPError {
+  /** Violations that triggered the block */
+  violations: any[];
+  /** The check that failed */
+  check: string;
+  /** DPDP Act section reference */
+  section: string;
+
+  constructor(message: string, violations: any[] = [], check: string = '', section: string = '') {
+    super(message);
+    this.name = 'DPDPBlockedError';
+    this.violations = violations;
+    this.check = check;
+    this.section = section;
+  }
+}
+
+/**
+ * Raised when child-targeted content is blocked (S.9(3)).
+ */
+export class DPDPChildContentBlockedError extends DPDPBlockedError {
+  constructor(message: string, violations: any[] = [], check: string = '', section: string = '') {
+    super(message, violations, check, section);
+    this.name = 'DPDPChildContentBlockedError';
+  }
+}
+
+/**
+ * Raised when PII is detected with piiAction='block' (S.8(5)).
+ */
+export class DPDPPiiBlockedError extends DPDPBlockedError {
+  constructor(message: string, violations: any[] = [], check: string = '', section: string = '') {
+    super(message, violations, check, section);
+    this.name = 'DPDPPiiBlockedError';
+  }
+}
+
+/**
+ * Raised when evaluate() returns 'require_action' due to missing consent.
+ */
+export class DPDPConsentRequiredError extends DPDPError {
+  /** Actions required before proceeding */
+  requiredActions: any[];
+  /** The purpose for which consent is missing */
+  missingConsentPurpose: string;
+
+  constructor(message: string, requiredActions: any[] = [], missingConsentPurpose: string = '') {
+    super(message);
+    this.name = 'DPDPConsentRequiredError';
+    this.requiredActions = requiredActions;
+    this.missingConsentPurpose = missingConsentPurpose;
+  }
+}
+
+/**
+ * Raised when a compliance timer deadline has passed.
+ */
+export class DPDPTimerExpiredError extends DPDPError {
+  /** The expired timer */
+  timer: any | null;
+
+  constructor(message: string, timer: any | null = null) {
+    super(message);
+    this.name = 'DPDPTimerExpiredError';
+    this.timer = timer;
+  }
+}
+
+/**
+ * Raised when a DPDP session ID is not found or has expired.
+ */
+export class DPDPSessionNotFoundError extends DPDPError {
+  /** The session ID that was not found */
+  sessionId: string;
+
+  constructor(sessionId: string) {
+    super(`DPDP session not found: ${sessionId}`);
+    this.name = 'DPDPSessionNotFoundError';
+    this.sessionId = sessionId;
+  }
+}
+
+/**
+ * Raised when `dpdp_audit` is called against a backend that does not serve it
+ * (the `/compliance/check` endpoint returns 404 or 501).
+ */
+export class DPDPHostedOnlyError extends DPDPError {
+  constructor(
+    message: string = 'dpdp_audit is available on the hosted RAIL Score API only. ' +
+      'Point baseUrl at https://api.responsibleailabs.ai to run audits.'
+  ) {
+    super(message);
+    this.name = 'DPDPHostedOnlyError';
+  }
+}

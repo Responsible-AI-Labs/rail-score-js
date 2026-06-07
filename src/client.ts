@@ -12,6 +12,9 @@ import type {
   ComplianceResult,
   MultiComplianceResult,
   HealthCheckResponse,
+  ApplicationConfig,
+  Capabilities,
+  DimensionsInfo,
 } from './types';
 import {
   AuthenticationError,
@@ -31,10 +34,11 @@ import {
 } from './errors';
 import { resolveFrameworkAlias, validateWeightsSum100 } from './utils';
 import { AgentNamespace } from './agent';
+import { DPDPNamespace } from './dpdp/client';
 
 const DEFAULT_TIMEOUT = 30000;
 const SAFE_REGENERATE_TIMEOUT = 120000;
-const SDK_VERSION = '2.4.0';
+const SDK_VERSION = '2.6.0';
 const AGENT_TOOL_CALL_ENDPOINT = '/railscore/v1/agent/tool-call';
 
 const RETRY_STATUSES = [429, 500, 502, 503];
@@ -83,6 +87,22 @@ export class RailScore {
    */
   readonly agent: AgentNamespace;
 
+  /**
+   * DPDP (India Digital Personal Data Protection Act, 2023) compliance namespace.
+   *
+   * Provides server-side content scanning, an event-driven behavioral compliance
+   * engine (sessions, gates, evidence, timers), and a tiered system audit.
+   *
+   * @example
+   * ```typescript
+   * const scan = await client.dpdp.scan('Call me at +91 9876543210', {
+   *   piiAction: 'mask',
+   * });
+   * console.log(scan.compliant, scan.piiFound.map((p) => p.type));
+   * ```
+   */
+  readonly dpdp: DPDPNamespace;
+
   constructor(config: RailScoreConfig) {
     if (!config.apiKey) {
       throw new ValidationError('API key is required');
@@ -94,6 +114,7 @@ export class RailScore {
     this.cacheEnabled = config.cache ?? false;
     this.retryEnabled = config.retry ?? false;
     this.agent = new AgentNamespace(this);
+    this.dpdp = new DPDPNamespace(this);
   }
 
   private buildCacheKey(endpoint: string, options: RequestInit): string {
@@ -395,6 +416,87 @@ export class RailScore {
       }
       throw new NetworkError(`Network request failed: ${error.message}`, error);
     }
+  }
+
+  /**
+   * Get the current configuration for this API key's application.
+   *
+   * Returns the bound application/environment, the dashboard-configured
+   * governance policy (thresholds, weights, enforcement, safe-regenerate, and
+   * whether it is locked), and whether enforcement is currently active.
+   * Read-only; consumes no credits.
+   *
+   * GET /railscore/v1/config
+   *
+   * @example
+   * ```typescript
+   * const cfg = await client.getConfig();
+   * console.log(cfg.application.id, cfg.policy.locked, cfg.enforcement.mode);
+   * ```
+   */
+  async getConfig(): Promise<ApplicationConfig> {
+    const d = await this.request<any>('/railscore/v1/config', { method: 'GET' });
+    const application = d.application ?? {};
+    const policy = d.policy ?? {};
+    const enforcement = d.enforcement ?? {};
+    return {
+      application: {
+        id: application.id ?? '',
+        environment: application.environment ?? '',
+        organization: application.organization ?? '',
+        plan: application.plan ?? '',
+      },
+      policy: {
+        enforcement: policy.enforcement ?? 'log_only',
+        evalMode: policy.evalMode ?? 'basic',
+        overallThreshold: policy.overallThreshold ?? 7.0,
+        domain: policy.domain ?? 'general',
+        dimensionThresholds: policy.dimensionThresholds ?? {},
+        dimensionWeights: policy.dimensionWeights ?? {},
+        compliance: policy.compliance ?? [],
+        safeRegenerate: policy.safeRegenerate ?? {},
+        locked: Boolean(policy.locked ?? false),
+      },
+      enforcement: {
+        active: Boolean(enforcement.active ?? false),
+        mode: enforcement.mode ?? 'monitor',
+      },
+      raw: d ?? {},
+    };
+  }
+
+  /**
+   * Get the plan capabilities for this API key: evaluation modes, compliance
+   * frameworks, agent/DPDP features, and request limits. Read-only; no credits.
+   *
+   * GET /railscore/v1/capabilities
+   */
+  async getCapabilities(): Promise<Capabilities> {
+    const d = await this.request<any>('/railscore/v1/capabilities', { method: 'GET' });
+    return {
+      plan: d.plan ?? 'free',
+      evaluation: d.evaluation ?? {},
+      compliance: d.compliance ?? {},
+      agent: d.agent ?? {},
+      dpdp: d.dpdp ?? {},
+      limits: d.limits ?? {},
+      raw: d ?? {},
+    };
+  }
+
+  /**
+   * Get the RAIL dimensions with this application's weights/thresholds and the
+   * score bands. Read-only; no credits.
+   *
+   * GET /railscore/v1/dimensions
+   */
+  async getDimensions(): Promise<DimensionsInfo> {
+    const d = await this.request<any>('/railscore/v1/dimensions', { method: 'GET' });
+    return {
+      dimensions: d.dimensions ?? [],
+      scoreBands: d.score_bands ?? [],
+      raw: d ?? {},
+    };
   }
 
   /**
