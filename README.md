@@ -1233,6 +1233,11 @@ weights: { safety: 50, privacy: 50 }
 
 ---
 
+## Contributing
+
+Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for development
+setup, testing, code style, commit conventions, and the release process.
+
 ## License
 
 MIT — see [LICENSE](LICENSE) for details.

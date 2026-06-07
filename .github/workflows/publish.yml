@@ -1,14 +1,19 @@
 name: Release and Publish to npm
 
-# Tag-driven auto-release. Push a SemVer tag that matches package.json, e.g.:
+# Tag-driven auto-release using npm trusted publishing (OIDC) — no NPM_TOKEN.
 #
-#   npm version 2.6.0 --no-git-tag-version   # if not already bumped
-#   git commit -am "chore: release v2.6.0" && git push
+# Push a SemVer tag that matches package.json, e.g.:
+#
 #   git tag v2.6.0 && git push origin v2.6.0
 #
-# That single tag push runs tests + build, publishes to npm (with provenance),
-# and creates the GitHub Release with auto-generated notes. No manual Release
-# step required.
+# That single tag push runs tests + build, publishes to npm via the configured
+# trusted publisher (with automatic provenance), and creates the GitHub Release
+# with auto-generated notes.
+#
+# Prerequisites:
+#   - npm: package > Settings > Trusted Publisher configured for this repo and
+#     workflow file (.github/workflows/publish.yml).
+#   - The job needs `id-token: write` so npm can mint a short-lived OIDC token.
 on:
   push:
     tags:
@@ -17,7 +22,7 @@ on:
 
 permissions:
   contents: write   # create the GitHub Release
-  id-token: write   # npm provenance attestations
+  id-token: write   # npm trusted publishing (OIDC) + provenance
 
 jobs:
   release:
@@ -34,6 +39,9 @@ jobs:
         with:
           node-version: '20'
           registry-url: 'https://registry.npmjs.org'
+
+      - name: Upgrade npm (trusted publishing requires npm >= 11.5.1)
+        run: npm install -g npm@latest
 
       - name: Verify tag matches package.json version
         run: |
@@ -54,10 +62,10 @@ jobs:
       - name: Build
         run: npm run build
 
+      # Trusted publishing: authentication is via OIDC (no token), and provenance
+      # attestations are generated automatically.
       - name: Publish to npm
-        run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public
 
       - name: Create GitHub Release
         env:

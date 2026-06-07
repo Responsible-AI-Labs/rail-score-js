@@ -1,0 +1,40 @@
+name: Feature request
+description: Suggest a new capability or improvement for the SDK
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the suggestion! Describe the use case and the API you'd like
+        to see — concrete examples make it much easier to evaluate.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / use case
+      description: What are you trying to do, and what's missing or awkward today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed API
+      description: The method, options, or behavior you'd like. Sketch the call site.
+      render: typescript
+      placeholder: |
+        const result = await client.dpdp.newThing({ ... });
+    validations:
+      required: false
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Workarounds you've tried or other approaches you've thought about.
+    validations:
+      required: false
+  - type: checkboxes
+    id: parity
+    attributes:
+      label: Parity
+      options:
+        - label: This feature already exists in the RAIL Score Python SDK
+          required: false

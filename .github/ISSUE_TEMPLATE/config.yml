@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Documentation
+    url: https://responsibleailabs.ai
+    about: Read the RAIL Score docs and API reference.
+  - name: Security report
+    url: mailto:research@responsibleailabs.ai
+    about: Please report security issues privately by email, not as a public issue.
