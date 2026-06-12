@@ -7,6 +7,8 @@
 
 Official JavaScript/TypeScript SDK for the [RAIL Score API](https://responsibleailabs.ai) — evaluate and generate responsible AI content with comprehensive scoring across 8 dimensions: safety, privacy, fairness, transparency, accountability, reliability, inclusivity, and user impact.
 
+> **Using an MCP client (Claude, Cursor, Copilot, LangGraph)?** Skip the SDK and connect the hosted [RAIL Score MCP server](https://github.com/Responsible-AI-Labs/rail-score-mcp) at `https://mcp.responsibleailabs.ai/mcp` for the same evaluation, guardrails, and compliance over one URL.
+
 ## Features
 
 - **Type-Safe** — Full TypeScript support with comprehensive type definitions
